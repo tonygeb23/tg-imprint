@@ -296,6 +296,7 @@ class AISettingsPage(wx.Panel):
         if not self.ask_yes(question, "Use the key from TG Drop Deck?",
                             "&Copy the key", "&Don't copy"):
             self._show_status("Nothing was copied.")
+            self._say("Nothing was copied.")
             return
         ok, text = describe.copy_drop_deck_key(provider,
                                                target_prefix=self._prefix)

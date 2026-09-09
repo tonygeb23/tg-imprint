@@ -353,6 +353,10 @@ head("The dialogs and the settings page, under wx, with no network")
 import wx  # noqa: E402
 from easypdf.ui import ai_settings_page, describe_dialog  # noqa: E402
 
+# Snapshot of the real entries, taken before any dialog or page runs, so the
+# check at the end proves this test left them exactly as they were.
+REAL_KEYS = {n: secrets.fetch(n, secrets.VISION_PREFIX) for n in ai.PROVIDERS}
+
 app = wx.App(False)
 frame = wx.Frame(None, title="test host")
 spoken = []
@@ -467,6 +471,7 @@ dialog.Destroy()
 describe.reset_consent()
 dialog = describe_dialog.DescribeImageDialog(frame, CIRCLE, provider="google",
                                              announce=spoken.append)
+dialog._help = spoken.append   # a confirmation is a hint, on announce_help
 dialog.ask_consent = lambda question: False
 dialog._on_describe(False)
 pump(lambda: flat(dialog.status) == "Nothing was sent.")
@@ -622,8 +627,8 @@ dialog = describe_dialog.DescribeDocumentDialog(frame, BODY, None, provider="goo
 pump(lambda: dialog._stage == "asking")
 dialog._on_send()
 pump(lambda: dialog._stage == "asking" and dialog.send_button.IsEnabled())
-check("a failure is shown in the field, spoken, and Send is offered again",
-      dialog.message.GetValue().startswith("Could not reach")
+check("a failure is spoken, the question is back in the field, and Send is offered again",
+      dialog.message.GetValue().startswith("This sends")
       and spoken[-1].startswith("Could not reach") and dialog.send_button.IsEnabled())
 dialog.Destroy()
 
@@ -761,9 +766,8 @@ else:
     check("every probe entry is gone",
           not any(secrets.fetch(n, PROBE) for n in ai.PROVIDERS)
           and not secrets.fetch("google", "Easy PDF test source: "))
-    check("no Easy PDF key was stored under the real prefix by this test",
-          all(secrets.fetch(n, secrets.VISION_PREFIX) in ("", secrets.fetch(n, secrets.VISION_PREFIX))
-              for n in ai.PROVIDERS))
+    check("the real Credential Manager entries are exactly as they were",
+          {n: secrets.fetch(n, secrets.VISION_PREFIX) for n in ai.PROVIDERS} == REAL_KEYS)
 
 frame.Destroy()
 app.Yield()

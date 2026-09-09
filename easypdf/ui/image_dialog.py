@@ -270,8 +270,11 @@ class PictureDialog(wx.Dialog):
             if speaker:
                 speaker("The describer is not part of this build yet.")
             return
+        settings = getattr(self.frame, "settings", None)
         dialog = DescribeImageDialog(self, raw, current_alt=self.alt.GetValue(),
-                                     context=self.context, imported=self.imported)
+                                     context=self.context, imported=self.imported,
+                                     provider=(settings.get("ai_provider") if settings else "") or "",
+                                     model=(settings.get("ai_model") if settings else "") or "")
         try:
             dialog.ShowModal()
             text = getattr(dialog, "result", None)

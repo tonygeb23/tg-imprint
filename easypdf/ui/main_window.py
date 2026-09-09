@@ -427,14 +427,17 @@ class MainFrame(wx.Frame):
         if not self:
             return
         self.editor.focus()
-        if open_path:
-            self._load_path(open_path)
-        elif paths.PREVIOUS_RUN_CRASHED:
+        # Recovery first, so a double click on a document after a crash
+        # still offers the snapshot; the document opens if nothing was
+        # recovered.
+        if paths.PREVIOUS_RUN_CRASHED:
             self._offer_recovery()
         elif restarted_after_update():
             # Velopack restarted the app after an update: the flush before
             # the restart may have left a snapshot of a modified document.
             self._offer_recovery()
+        if open_path and not self.modified and not self.path:
+            self._load_path(open_path)
         first_run = bool(appupdate_flag("FIRST_RUN")) or not self.settings.get("first_run_done")
         if first_run:
             self.settings["first_run_done"] = True
@@ -839,6 +842,8 @@ class MainFrame(wx.Frame):
     def on_close_document(self, _event=None):
         if not self._confirm_discard():
             return
+        # Answered once. on_new would ask again while modified is still set.
+        self.modified = False
         self.on_new()
         self.announce_help(S["closed"])
 
@@ -1366,7 +1371,9 @@ class MainFrame(wx.Frame):
         raw = data_uri_bytes(spec.get("src", ""))
         dialog = DescribeImageDialog(self, raw, current_alt=spec.get("alt", ""),
                                      context=self._context_for(index),
-                                     imported=bool(self.imported_from))
+                                     imported=bool(self.imported_from),
+                                     provider=self.settings.get("ai_provider") or "",
+                                     model=self.settings.get("ai_model") or "")
         try:
             dialog.ShowModal()
             text = getattr(dialog, "result", None)
@@ -1400,7 +1407,11 @@ class MainFrame(wx.Frame):
 
             def got_pictures(pictures, _e):
                 images = [data_uri_bytes(p.get("src", "")) for p in (pictures or [])]
-                dialog = DescribeDocumentDialog(self, body, [i for i in images if i])
+                dialog = DescribeDocumentDialog(
+                    self, body, [i for i in images if i],
+                    provider=self.settings.get("ai_provider") or "",
+                    model=self.settings.get("ai_model") or "",
+                    document_name=os.path.basename(self.path) if self.path else "")
                 try:
                     dialog.ShowModal()
                 finally:

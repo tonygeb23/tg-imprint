@@ -728,3 +728,5 @@ are asked in your name"; summarised here.
 - The Test button: "In at most ten words, say what shape and colour is
   in this picture." and, without a picture, "Reply with the single word:
   ready."
+
+- Added 2026-09-09 after the Overseer's review: "Type or ask for a description first." (picture dialog, empty description on Use this description). The consent question now says "the first 30,000 of its N words" when a document is over the cap, and names the number of pictures that will really go. Status: draft.

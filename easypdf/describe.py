@@ -161,15 +161,18 @@ def consent_question(kind, provider, pictures, words, kilobytes, imported,
     if kind == "document":
         what = ("the whole of %s" % document_name) if document_name \
             else "your whole document"
+        # The size said is the size that goes: only the first WORD_CAP words
+        # are sent, and `pictures` is the number that will really go.
+        wtext = ("about {:,} words".format(words) if words <= WORD_CAP
+                 else "the first {:,} of its {:,} words".format(WORD_CAP, words))
         if pictures == 0:
-            count = "about {:,} words and no pictures".format(words)
+            count = wtext + " and no pictures"
         elif pictures == 1:
-            count = "about {:,} words and one picture".format(words)
+            count = wtext + " and one picture"
         elif pictures > PICTURE_CAP:
-            count = ("about {:,} words and the first {} of its {} pictures"
-                     .format(words, PICTURE_CAP, pictures))
+            count = wtext + " and the first {} of its {} pictures".format(PICTURE_CAP, pictures)
         else:
-            count = "about {:,} words and {} pictures".format(words, pictures)
+            count = wtext + " and {} pictures".format(pictures)
         return ("This sends %s to %s, over the internet, so it can be "
                 "described to you: %s, %s. The description comes back as "
                 "text for you to read; nothing is written into your "

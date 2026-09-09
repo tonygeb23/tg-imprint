@@ -231,6 +231,7 @@ class DescribeImageDialog(wx.Dialog, _Threaded):
         self._generation = 0
         self._came_from = ""
         self._say = speech_channel(announce or find_announcer(parent, "announce"))
+        self._help = speech_channel(find_announcer(parent, "announce_help"))
 
         outer = wx.BoxSizer(wx.VERTICAL)
 
@@ -343,7 +344,7 @@ class DescribeImageDialog(wx.Dialog, _Threaded):
                                              kilobytes, self._imported)
         if not self.ask_consent(question):
             self._show_status("Nothing was sent.")
-            self._say("Nothing was sent.")
+            self._help("Nothing was sent.")
             return
         if not self._imported:
             describe.record_consent("image")
@@ -398,6 +399,9 @@ class DescribeImageDialog(wx.Dialog, _Threaded):
         self.provider.Enable(not busy)
         if status:
             self._show_status(status)
+            if busy:
+                # A static's label is not spoken; say the wait out loud.
+                self._help(status)
 
     def _show_status(self, text):
         show_wrapped(self, self.status, text)
@@ -412,6 +416,11 @@ class DescribeImageDialog(wx.Dialog, _Threaded):
         if self._busy:
             return
         text = self.answer.GetValue().strip()
+        if not text:
+            self._show_status("Type or ask for a description first.")
+            self._say("Type or ask for a description first.")
+            self.answer.SetFocus()
+            return
         self.result = text
         self.provider_used = self._came_from if text else ""
         self._generation += 1
@@ -610,8 +619,10 @@ class DescribeDocumentDialog(wx.Dialog, _Threaded):
             self._stage = "asking"
             self.send_button.Enable(True)
             self.provider.Enable(True)
-            self._show_status("Nothing was described.")
+            self._show_status(text)
             self._say(text)
+            # The question goes back so Send can be re-read before it is pressed again.
+            self._show_question()
 
     # -- the window ------------------------------------------------------
     def _show_status(self, text):
