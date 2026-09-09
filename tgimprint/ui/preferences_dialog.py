@@ -26,6 +26,13 @@ class PreferencesDialog(wx.Dialog):
         self.ai_page = None
         outer = wx.BoxSizer(wx.VERTICAL)
         self.tabs = wx.Notebook(self)
+        # The tab strip and each page carry a name. Measured through the
+        # accessibility tree on 2026-09-09, after HarmonicaPlayer wrote in:
+        # the tab items were named, but the tab control answered with no
+        # name at all and every page answered "panel", so arrowing along
+        # the tabs said nothing useful and the page you landed on said
+        # less. tests/test_ui_names.py reads the tree back and asserts it.
+        name_field(self.tabs, "Preferences pages")
         self._build_speech()
         self._build_document()
         self._build_ai()
@@ -48,6 +55,7 @@ class PreferencesDialog(wx.Dialog):
         panel = wx.Panel(self.tabs)
         sizer = wx.BoxSizer(wx.VERTICAL)
         panel.SetSizer(sizer)
+        name_field(panel, title)
         self.tabs.AddPage(panel, title)
         return panel, sizer
 
@@ -118,6 +126,7 @@ class PreferencesDialog(wx.Dialog):
             return
         try:
             self.ai_page = AISettingsPage(self.tabs, self.settings)
+            name_field(self.ai_page, "AI")
             self.tabs.AddPage(self.ai_page, "AI")
         except Exception as exc:
             panel, sizer = self._page("AI")

@@ -292,6 +292,61 @@ except ImportError:
     print("  skip comtypes is not installed, so the tree cannot be read")
 
 
+# Preferences: the tab strip and every page say what they are.
+#
+# HarmonicaPlayer, on the 0.1.0 beta: the tabs had no associated label, and
+# he could only work out which page he was on by tabbing into it. Measured:
+# the tab items were named, the tab control was not, and every page
+# answered "panel", which is wx's default.
+print(chr(10) + "Preferences tabs and pages are named")
+try:
+    import comtypes.client as _cc2
+    _cc2.GetModule("UIAutomationCore.dll")
+    from comtypes.gen import UIAutomationClient as _U2
+    from tgimprint.ui.preferences_dialog import PreferencesDialog
+    from tgimprint.settings import Settings
+    import time as _t2
+
+    _f2 = wx.Frame(None)
+    try:
+        _p2 = PreferencesDialog(_f2, _f2, Settings())
+    except TypeError:
+        _p2 = PreferencesDialog(_f2, Settings())
+    _f2.Show()
+    _p2.Show()
+    for _ in range(20):
+        wx.Yield()
+        _t2.sleep(0.05)
+    _a2 = _cc2.CreateObject("{ff48dba4-60ef-4201-aa87-54103eef594e}",
+                            interface=_U2.IUIAutomation)
+    _w2 = _a2.ControlViewWalker
+    _tabs, _panes = [], []
+
+    def _walk2(element, depth=0):
+        child = _w2.GetFirstChildElement(element)
+        while child:
+            try:
+                kind, name = child.CurrentLocalizedControlType, child.CurrentName
+            except Exception:
+                kind, name = "", ""
+            if kind == "tab":
+                _tabs.append(name or "")
+            elif kind == "pane" and depth <= 3:
+                _panes.append(name or "")
+            if depth < 3:
+                _walk2(child, depth + 1)
+            child = _w2.GetNextSiblingElement(child)
+
+    _walk2(_a2.ElementFromHandle(int(_p2.GetHandle())))
+    check("the Preferences tab strip has a name",
+          bool(_tabs) and all(t.strip() for t in _tabs), _tabs)
+    check("and no page answers with the wx default name",
+          "panel" not in [x.lower() for x in _panes], _panes)
+    _p2.Destroy()
+    _f2.Destroy()
+except ImportError:
+    print("  skip comtypes is not installed, so the tree cannot be read")
+
 print("\n%d/%d checks passed" % (sum(CHECKS), len(CHECKS)))
 sys.stdout.flush()
 os._exit(0 if all(CHECKS) else 1)
