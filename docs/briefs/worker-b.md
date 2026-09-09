@@ -254,3 +254,28 @@ What you built, the measured answers to the questions above, the test
 files and counts, the screenshots, every string you added, anything you
 need from Worker A, Worker C or the coordinator, and anything you left out
 and why.
+
+
+## Amendment, 2026-09-09, after the Overseer's review of Worker A
+
+Edit A4 read literally cannot hold with edit A8: `alt=""` measurably makes
+Chromium drop the picture from the structure tree, so a picture with a
+bare `alt=""` is an artifact and can never fail "Pictures described". The
+Overseer ruled for Worker A's resolution, and this is the contract every
+part of the app follows:
+
+- In the document file, a picture whose description is missing carries
+  `alt="" data-needs-alt="1"` and the sanitiser warns. Nothing is silently
+  decorative; the Pictures dialog lists it.
+- At export, that picture is written with NO alt attribute, so it becomes a
+  Figure without Alt, the checker fails "Pictures described" by name, and
+  the PDF/UA identifier is withheld.
+- A decorative picture is `alt=""` with `role="presentation"`, and only the
+  decorative box in the picture dialog writes that. The editor must never
+  write a bare `alt=""` for a picture that simply has no description yet.
+- The export writes `role="presentation"` on every figure element and the
+  Caption sits beside the Figure, because a plain figure makes an outer
+  Figure without Alt (Matterhorn 13-004). Round 4 looks at that shape in
+  PAC and veraPDF specifically, if Tony approves the downloads.
+- The `embed` keyword on `normalise` and the `report` field on
+  `ExportResult` are accepted additions to the interfaces.
