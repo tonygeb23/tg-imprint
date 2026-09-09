@@ -48,8 +48,9 @@ PUBLIC_KEY_B64 = "kJOlcZKYCyYBk/1JrmyfxFSX5Vf6JiM7oXf+0PEDZ04="
 # The app-specific block.
 # ---------------------------------------------------------------------------
 #: The signed manifest. check_updates.py in TG Studios Release reads this
-#: name and the key above out of the source, so keep both as constants.
-MANIFEST_URL = "https://tgstudios.app/updates/%s-app.json" % C.FEED_SLUG
+#: line and the key above out of the source TEXT, so it has to be a literal
+#: and not derived; tests/test_scaffold.py asserts it agrees with FEED_SLUG.
+MANIFEST_URL = "https://tgstudios.app/updates/easy-pdf-app.json"
 #: The Velopack feed: the folder holding releases.win.json and the packages.
 RELEASES_URL = C.RELEASES_URL
 #: The manifest key that names the Velopack package. The manifest also

@@ -72,9 +72,12 @@ print("\nThe update client")
 
 from easypdf import appupdate   # noqa: E402
 
-check("the signed manifest URL is derived from the feed slug",
-      appupdate.MANIFEST_URL == "https://tgstudios.app/updates/easy-pdf-app.json",
+check("the signed manifest URL agrees with the feed slug",
+      appupdate.MANIFEST_URL == "https://tgstudios.app/updates/%s-app.json" % C.FEED_SLUG,
       appupdate.MANIFEST_URL)
+update_src = open(os.path.join(HERE, "easypdf", "appupdate.py"), encoding="utf-8").read()
+check("and is a literal the TG Studios update checker can read out of the source",
+      'MANIFEST_URL = "https://tgstudios.app/updates/easy-pdf-app.json"' in update_src)
 check("the Velopack feed URL is the constant", appupdate.RELEASES_URL == C.RELEASES_URL)
 check("the public key is baked in", "REPLACE" not in appupdate.PUBLIC_KEY_B64
       and len(appupdate.PUBLIC_KEY_B64) > 40)
