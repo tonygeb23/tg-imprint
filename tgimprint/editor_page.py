@@ -1,7 +1,7 @@
 """The editor page: the HTML, CSS and JavaScript inside the WebView2.
 
 One contenteditable region that only ever holds semantic markup, a key map
-generated from easypdf/ui/keymap.py, and a message bridge to Python.
+generated from tgimprint/ui/keymap.py, and a message bridge to Python.
 
 Three measured facts shape it (CLAUDE.md, CHALLENGE.md W2, W4 to W7, W11):
 
@@ -74,7 +74,7 @@ body { font-family: %(font)s; font-size: %(px)spx; line-height: 1.5; }
 #editor figure.place-left { margin-right: auto; }
 #editor figure.place-centre { margin-left: auto; margin-right: auto; }
 #editor figure.place-right { margin-left: auto; }
-#editor figure.epdf-here { outline: 2px dashed #2b6fd6; outline-offset: 3px; }
+#editor figure.imprint-here { outline: 2px dashed #2b6fd6; outline-offset: 3px; }
 #editor table { border-collapse: collapse; margin: 0.6em 0 0.9em; width: 100%%; }
 #editor th, #editor td { border: 1px solid #8f96a3; padding: 0.3em 0.5em; text-align: left;
   vertical-align: top; min-width: 2em; }
@@ -94,7 +94,7 @@ body { font-family: %(font)s; font-size: %(px)spx; line-height: 1.5; }
   #editor code, #editor p.code-block, #editor th { background: Canvas; color: CanvasText; }
   #editor th, #editor td, #editor hr { border-color: CanvasText; }
   #editor figcaption { color: CanvasText; }
-  #editor figure.epdf-here { outline-color: Highlight; }
+  #editor figure.imprint-here { outline-color: Highlight; }
 }
 """
 
@@ -110,7 +110,7 @@ _JS = r"""
 
   function post(obj) {
     var text = JSON.stringify(obj);
-    try { window.easypdf.postMessage(text); return; } catch (e) {}
+    try { window.tgimprint.postMessage(text); return; } catch (e) {}
     try { window.chrome.webview.postMessage(text); } catch (e2) {}
   }
 

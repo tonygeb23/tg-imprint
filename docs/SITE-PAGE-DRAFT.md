@@ -4,26 +4,26 @@ Every word here is a draft in Tony's voice and ships only when he has read
 it. It is written in the shape `Websites\tgstudios.app\content\pages\*.md`
 uses (see `drop-deck.md` there for the blocks). The version number and the
 download sizes are filled in by the release. The name follows
-`docs/DECISIONS.md` decision 6, which is Tony's; "Easy PDF" is the working
+`docs/DECISIONS.md` decision 6, which is Tony's; "TG Imprint" is the working
 assumption.
 
 ---
 
-# Easy PDF
+# TG Imprint
 
 Write a document. Get a PDF that screen readers can actually read.
 
 :::hero
-Easy PDF is a small word processor for Windows that does one thing well:
+TG Imprint is a small word processor for Windows that does one thing well:
 every PDF it writes is tagged, so a blind reader hears headings, lists,
 links and picture descriptions instead of a wall of text. It also opens a
 PDF somebody sent you and helps you make it accessible.
 :::
 
 :::actions
-- [Download Easy PDF for Windows](/downloads/EasyPDF-1.0.0-Setup.exe)
-- [Portable zip](/downloads/Easy-PDF-1.0.0-windows.zip)
-- [Read the guide](/easy-pdf-guide/)
+- [Download TG Imprint for Windows](/downloads/TGImprint-1.0.0-Setup.exe)
+- [Portable zip](/downloads/TG-Imprint-1.0.0-windows.zip)
+- [Read the guide](/tg-imprint-guide/)
 :::
 
 ## What it does
@@ -42,14 +42,14 @@ PDF somebody sent you and helps you make it accessible.
   key, and edit what comes back. Nothing leaves your machine without
   asking you first.
 - Open a PDF, a Word document, a Markdown file, a web page or plain text,
-  and save it as an Easy PDF document. A PDF that arrived with no picture
+  and save it as an TG Imprint document. A PDF that arrived with no picture
   descriptions gets a list of the pictures that need one.
 - Free. If it earns its keep, there is a [donate page](/donate/).
 
 ## Why not Word or LibreOffice
 
 They can make a tagged PDF, if you know which of eleven boxes to tick,
-and they will happily make an untagged one if you do not. Easy PDF has no
+and they will happily make an untagged one if you do not. TG Imprint has no
 untagged setting. It will not write a PDF it cannot tag, it will not let a
 picture in without a description, and it reads the result back to you
 before you send it.

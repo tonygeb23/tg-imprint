@@ -17,7 +17,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from easypdf import ai, describe, secrets  # noqa: E402
+from tgimprint import ai, describe, secrets  # noqa: E402
 
 CHECKS = []
 SKIPPED = []
@@ -73,9 +73,9 @@ check("nothing in the module keeps a document yes",
 head("The consent question names the provider, the count, the size and the policy")
 
 question = describe.consent_question("document", "google", 3, 1240, 640, False,
-                                     "Report.epdf")
+                                     "Report.imprint")
 check("a document names the provider", "Gemini, from Google" in question)
-check("and the file", "Report.epdf" in question)
+check("and the file", "Report.imprint" in question)
 check("and the words and pictures", "1,240 words" in question and "3 pictures" in question)
 check("and the size", "about 640 KB" in question)
 check("and ends by asking", question.endswith("Send the document?"))
@@ -89,7 +89,7 @@ question = describe.consent_question("document", "openai", 0, 12, 1, False)
 check("no pictures is said plainly", "no pictures" in question)
 question = describe.consent_question("image", "anthropic", 1, 0, 120, False)
 check("a picture from disk says it will not ask again this session",
-      "until Easy PDF is next opened" in question and "Claude, from Anthropic" in question)
+      "until TG Imprint is next opened" in question and "Claude, from Anthropic" in question)
 check("and ends by asking", question.endswith("Send the picture?"))
 question = describe.consent_question("image", "openai", 1, 0, 120, True)
 check("an imported picture says why it asks every time",
@@ -322,8 +322,8 @@ describe.key_for = real_key_for
 # ---------------------------------------------------------------------------
 head("The Drop Deck key helper, against probe entries it makes and removes")
 
-SOURCE = "Easy PDF test source: "
-TARGET = "Easy PDF test probe: "
+SOURCE = "TG Imprint test source: "
+TARGET = "TG Imprint test probe: "
 if not secrets.available():
     skip("copying a key between prefixes", "no credential store on this machine")
 else:
@@ -351,7 +351,7 @@ else:
 head("The dialogs and the settings page, under wx, with no network")
 
 import wx  # noqa: E402
-from easypdf.ui import ai_settings_page, describe_dialog  # noqa: E402
+from tgimprint.ui import ai_settings_page, describe_dialog  # noqa: E402
 
 # Snapshot of the real entries, taken before any dialog or page runs, so the
 # check at the end proves this test left them exactly as they were.
@@ -559,7 +559,7 @@ def slow_document(body_html, images, provider, model, progress=None):
 describe.describe_document = slow_document
 dialog = describe_dialog.DescribeDocumentDialog(
     frame, BODY, None, provider="google", announce=spoken.append,
-    announce_help=helped.append, document_name="sample.epdf")
+    announce_help=helped.append, document_name="sample.imprint")
 check("the message field is read-only, named, and has focus",
       not dialog.message.IsEditable() and dialog.message.GetName() == "Message"
       and dialog.FindFocus() is dialog.message)
@@ -568,7 +568,7 @@ pump(lambda: dialog._stage == "asking")
 question = dialog.message.GetValue()
 check("the consent question arrives in the field, naming the file, the "
       "provider, the words and the pictures",
-      "sample.epdf" in question and "Gemini, from Google" in question
+      "sample.imprint" in question and "Gemini, from Google" in question
       and "60 words" in question and "2 pictures" in question
       and question.endswith("Send the document?"), question[:120])
 check("and then Send is offered", dialog.send_button.IsEnabled()
@@ -637,7 +637,7 @@ describe.describe_document = real_describe_document
 describe.key_for = real_key_for
 
 # The settings page, writing only under a probe prefix.
-PROBE = "Easy PDF test probe: "
+PROBE = "TG Imprint test probe: "
 if not secrets.available():
     skip("the settings page against the credential store", "no credential store")
 else:
@@ -742,12 +742,12 @@ else:
 
     page.key.ChangeValue("")
     page.ask_yes = lambda question, title, yes, no: "TG Drop Deck" in question
-    secrets.store("google", "probe-dd-key-3333", "Easy PDF test source: ")
+    secrets.store("google", "probe-dd-key-3333", "TG Imprint test source: ")
     real_prefix = describe.DROP_DECK_PREFIX
-    describe.DROP_DECK_PREFIX = "Easy PDF test source: "
+    describe.DROP_DECK_PREFIX = "TG Imprint test source: "
     real_copy = describe.copy_drop_deck_key
-    describe.copy_drop_deck_key = lambda provider, source_prefix="Easy PDF test source: ", \
-        target_prefix=None: real_copy(provider, "Easy PDF test source: ", target_prefix)
+    describe.copy_drop_deck_key = lambda provider, source_prefix="TG Imprint test source: ", \
+        target_prefix=None: real_copy(provider, "TG Imprint test source: ", target_prefix)
     page._on_drop_deck()
     describe.copy_drop_deck_key = real_copy
     describe.DROP_DECK_PREFIX = real_prefix
@@ -762,10 +762,10 @@ else:
     page.Destroy()
     for name in ai.PROVIDERS:
         secrets.forget(name, PROBE)
-    secrets.forget("google", "Easy PDF test source: ")
+    secrets.forget("google", "TG Imprint test source: ")
     check("every probe entry is gone",
           not any(secrets.fetch(n, PROBE) for n in ai.PROVIDERS)
-          and not secrets.fetch("google", "Easy PDF test source: "))
+          and not secrets.fetch("google", "TG Imprint test source: "))
     check("the real Credential Manager entries are exactly as they were",
           {n: secrets.fetch(n, secrets.VISION_PREFIX) for n in ai.PROVIDERS} == REAL_KEYS)
 
@@ -787,7 +787,7 @@ else:
             CIRCLE, "google", "",
             context="It sits under the heading \"A picture with a description\". "
                     "The paragraph before it says: \"A sample document used to "
-                    "test Easy PDF.\"")
+                    "test TG Imprint.\"")
         took = time.monotonic() - started
     finally:
         describe.key_for = real_key_for

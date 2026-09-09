@@ -26,9 +26,9 @@ sys.path.insert(0, HERE)
 os.chdir(HERE)
 
 import importlib.util   # noqa: E402
-spec = importlib.util.spec_from_file_location("easypdf_main", os.path.join(HERE, "main.py"))
-easypdf_main = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(easypdf_main)
+spec = importlib.util.spec_from_file_location("tgimprint_main", os.path.join(HERE, "main.py"))
+tgimprint_main = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tgimprint_main)
 
 import wx   # noqa: E402
 import wx.html2 as webview   # noqa: E402
@@ -114,7 +114,7 @@ def find_webview(window):
 
 
 app = wx.App(False)
-frame = easypdf_main.build_main_window()
+frame = tgimprint_main.build_main_window()
 frame.Show()
 view = find_webview(frame)
 check("the window holds a WebView editor", view is not None)

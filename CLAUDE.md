@@ -1,4 +1,4 @@
-# Easy PDF, working notes
+# TG Imprint, working notes
 
 Accessible document authoring that exports tagged PDF/UA output, reads a
 PDF somebody sent so it can be made accessible, and describes pictures with
@@ -41,11 +41,11 @@ string awaiting Tony's approval.
   Content Security Policy.** A received file ran its `onerror` handler
   inside the editor when loaded raw (CHALLENGE.md W11). Load, paste,
   import, save and export all go through `htmlclean.normalise`.
-- **The native document is `.epdf`**, self-contained HTML inside a file
+- **The native document is `.imprint`**, self-contained HTML inside a file
   type the installer registers. `.html` is an import and an export.
-- **The frozen block in `easypdf/constants.py` never changes after the
+- **The frozen block in `tgimprint/constants.py` never changes after the
   first publish**, and that now includes the Velopack package id
-  `TGStudios.EasyPDF`, which names the install folder and every update
+  `TGStudios.TGImprint`, which names the install folder and every update
   package. `tests/test_scaffold.py` asserts them. Until the first publish
   a rename is one commit; see `docs/DECISIONS.md` decision 6.
 - **Velopack is the installer and the updater** (Tony, 2026-09-09, for
@@ -55,7 +55,7 @@ string awaiting Tony's approval.
   vouch for. `velopack.App().run()` is the first line of `main.py` that
   does anything, before DPI and before wx: it exits the process when it is
   running an install, update or uninstall hook, and those hooks are where
-  `filetype.py` registers and removes `.epdf`. `TG Studios\RELEASING.md`
+  `filetype.py` registers and removes `.imprint`. `TG Studios\RELEASING.md`
   has the Velopack section of the pipeline.
 - **Runs on the global Python 3.13.5, no venv**, like the other apps.
 - **Build outside Dropbox.** `tools/build_release.py` does; do not point
@@ -116,16 +116,16 @@ string awaiting Tony's approval.
 ```
 main.py                 DPI, taskbar identity, single instance, selftest, entry
 launch.pyw              what the desktop shortcut runs (pythonw, no console)
-easypdf/constants.py    names, the frozen block, speech levels, page defaults
-easypdf/paths.py        config, recent, autosave folders; frozen or source
-easypdf/singleinstance.py, updatedialog.py, speech.py   byte-identical to Drop Deck
-easypdf/appupdate.py    Velopack applies updates; the TG Studios signed manifest decides
-easypdf/filetype.py     registers .epdf per user from Velopack's install and update hooks
-easypdf/handoff.py      a second launch hands its document to the running copy
-easypdf/secrets.py      Credential Manager; prefix "Easy PDF AI key: "
-easypdf/ai.py           the three-provider layer (from Drop Deck's vision.py)
-easypdf/appicon.py      the mark, drawn at any size; feeds the .ico
-easypdf/ui/             the window, the editor page, every dialog
+tgimprint/constants.py    names, the frozen block, speech levels, page defaults
+tgimprint/paths.py        config, recent, autosave folders; frozen or source
+tgimprint/singleinstance.py, updatedialog.py, speech.py   byte-identical to Drop Deck
+tgimprint/appupdate.py    Velopack applies updates; the TG Studios signed manifest decides
+tgimprint/filetype.py     registers .imprint per user from Velopack's install and update hooks
+tgimprint/handoff.py      a second launch hands its document to the running copy
+tgimprint/secrets.py      Credential Manager; prefix "TG Imprint AI key: "
+tgimprint/ai.py           the three-provider layer (from Drop Deck's vision.py)
+tgimprint/appicon.py      the mark, drawn at any size; feeds the .ico
+tgimprint/ui/             the window, the editor page, every dialog
 tools/build_release.py  PyInstaller, then vpk pack (Velopack), outside Dropbox
 tools/release_app.py    sign the manifest, rehearse, publish the feed, verify it live
 tools/nodashes.py       the dash rule
@@ -140,7 +140,7 @@ python main.py "some document.html"
 python tests/test_scaffold.py          # and every other tests/*.py, one at a time
 python main.py --selftest --selftest-out report.txt
 python tools/build_release.py
-"%LOCALAPPDATA%\TG Studios Build\easy-pdf\dist\Easy PDF\Easy PDF.exe" --selftest --selftest-out report.txt
+"%LOCALAPPDATA%\TG Studios Build\tg-imprint\dist\TG Imprint\TG Imprint.exe" --selftest --selftest-out report.txt
 python tools/release_app.py rehearse   # never publish without Tony's go
 ```
 

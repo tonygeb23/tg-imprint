@@ -1,4 +1,4 @@
-# PDF/UA in Easy PDF
+# PDF/UA in TG Imprint
 
 What the export guarantees, what the checker can prove, what it cannot,
 why the PDF/UA identifier is gated, the sanitiser's allow list, the known
@@ -42,8 +42,8 @@ back with pikepdf (`tests/test_pdfexport.py`):
 - Every font subset embedded (Type0, Identity, with ToUnicode). The
   stylesheet uses Arial with Calibri and Helvetica as fallbacks, and
   Consolas for code, so the fonts exist on every Windows machine.
-- Info Title, Author, Subject; Creator "Easy PDF 1.0.0"; Producer
-  "Easy PDF 1.0.0 (Microsoft Edge 152.0.4191.66)", the engine's name and
+- Info Title, Author, Subject; Creator "TG Imprint 1.0.0"; Producer
+  "TG Imprint 1.0.0 (Microsoft Edge 152.0.4191.66)", the engine's name and
   version, so a bad engine batch can be traced. pikepdf never stamps
   itself: the metadata is opened with `set_pikepdf_as_editor=False`, and
   the test asserts the strings after the final save (CHALLENGE.md E9).
@@ -74,7 +74,7 @@ back with pikepdf (`tests/test_pdfexport.py`):
   document's properties is letters, digits, spaces, commas, quotes and
   hyphens or it falls back to the default, both on the way into a
   document from a received file and on the way into the print page. A
-  received `.epdf` cannot put script or markup into the page the engine
+  received `.imprint` cannot put script or markup into the page the engine
   prints.
 - The finished PDF is copied beside its destination and swapped in with
   one replace, so a full disk, an interrupted copy or a file held open in
@@ -240,7 +240,7 @@ Measured, and not fixable from here:
 - Arabic text comes out of the PDF's text layer with letters in the wrong
   order (E7): the ToUnicode map gives base letters, not the visual
   forms. Right to left is out of 1.0.0 and warned about at export.
-- Chromium does not downsample pictures (E8); Easy PDF downscales on the
+- Chromium does not downsample pictures (E8); TG Imprint downscales on the
   way in instead (2,000 pixels on the long edge, over 300 dots per inch
   on a letter page's text width).
 

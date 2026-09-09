@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from easypdf.htmlclean import normalise  # noqa: E402
+from tgimprint.htmlclean import normalise  # noqa: E402
 
 CHECKS = []
 PROVE_FAIL = "--prove-fail" in sys.argv
@@ -134,7 +134,7 @@ print("\nHostile markup")
 out, warnings = clean('<p onclick="x()">t</p><script>alert(1)</script><style>p{}</style><iframe src="x"></iframe>'
                       '<object></object><textarea><img src=x onerror=alert(1)></textarea><svg onload="x()"></svg><p>after</p>')
 check("script, style, iframe, object, textarea and svg vanish with their content", out == "<p>t</p><p>after</p>", out)
-check("one script warning", warnings == ["Script in the file was removed. It cannot run inside Easy PDF."], warnings)
+check("one script warning", warnings == ["Script in the file was removed. It cannot run inside TG Imprint."], warnings)
 out, _w = clean('<p>a &lt;b&gt; &amp; "q" </p>')
 check("text is escaped on the way out", out == '<p>a &lt;b&gt; &amp; "q"</p>', out)
 out, _w = clean('<p><a href="https://x.y/?a=1&b=2">l</a></p>')

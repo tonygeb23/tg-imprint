@@ -1,4 +1,4 @@
-"""Names and the few values every part of Easy PDF has to agree on.
+"""Names and the few values every part of TG Imprint has to agree on.
 
 Everything user-visible here is a draft until Tony has read it: see
 docs/STRINGS.md. The frozen block is different: it may never change after
@@ -10,7 +10,7 @@ the first release.
 # stable; that is what the frozen block below is for. docs/DECISIONS.md
 # decision 6 records that the name collides with an existing product and
 # is Tony's to settle before the first publish.
-APP_NAME = "Easy PDF"
+APP_NAME = "TG Imprint"
 APP_VERSION = "1.0.0"
 VENDOR = "TG Studios"
 #: docs/STRINGS.md: draft, needs approval.
@@ -23,67 +23,67 @@ TAGLINE = "Write a document, get a PDF that screen readers can read."
 # build has to recognise an older build already running. FEED_SLUG names the
 # update manifest on tgstudios.app, so every installed copy keeps finding its
 # feed. APP_USER_MODEL_ID is how the Windows taskbar groups the app's windows
-# and pins it. DOC_PROGID is the registry ProgId behind the .epdf file type;
+# and pins it. DOC_PROGID is the registry ProgId behind the .imprint file type;
 # a changed ProgId orphans the old key on every machine. CONFIG_FOLDER_NAME
 # is the settings folder under TG Studios; a display rename after release
 # must not move everybody's settings. The installer's AppId GUID lives in
-# tools/easypdf.iss and is frozen for the same reason: a changed GUID
+# tools/tgimprint.iss and is frozen for the same reason: a changed GUID
 # installs alongside the old copy instead of over it.
 # tests/test_scaffold.py asserts every one of these.
 #
 # Until the first publish these CAN still change, together, if Tony renames
-# the product: this block, tools/easypdf.iss (names, not the GUID),
+# the product: this block, tools/tgimprint.iss (names, not the GUID),
 # tests/test_scaffold.py, and the TG Stats download rules.
 # ---------------------------------------------------------------------------
-INSTANCE_SLUG = "EasyPDF"
-FEED_SLUG = "easy-pdf"
-APP_USER_MODEL_ID = "TGStudios.EasyPDF.1"
-DOC_PROGID = "TGStudios.EasyPDF.Document"
-CONFIG_FOLDER_NAME = "Easy PDF"
+INSTANCE_SLUG = "TGImprint"
+FEED_SLUG = "tg-imprint"
+APP_USER_MODEL_ID = "TGStudios.TGImprint.1"
+DOC_PROGID = "TGStudios.TGImprint.Document"
+CONFIG_FOLDER_NAME = "TG Imprint"
 #: The Velopack package id. It names the install folder
-#: (%LocalAppData%\TGStudios.EasyPDF), the Add or Remove Programs entry
+#: (%LocalAppData%\TGStudios.TGImprint), the Add or Remove Programs entry
 #: and every update package, so a changed id is a different program that
 #: installs beside the old one. Tony chose Velopack for every program from
 #: this one onward (2026-09-09); the older TG Studios apps keep their own
 #: updater.
-PACK_ID = "TGStudios.EasyPDF"
+PACK_ID = "TGStudios.TGImprint"
 #: Where the Velopack feed lives: the folder holding releases.win.json and
 #: the update packages. The signed TG Studios manifest that vouches for what
 #: is in it lives beside the other apps' manifests, see appupdate.py.
 RELEASES_URL = "https://tgstudios.app/downloads/%s/" % FEED_SLUG
-#: EasyPDF-1.0.0-Setup.exe and Easy-PDF-1.0.0-windows.zip. Hyphens rather
+#: TGImprint-1.0.0-Setup.exe and TG-Imprint-1.0.0-windows.zip. Hyphens rather
 #: than spaces because these names become URLs, scp arguments and TG Stats
 #: download rules, and a space escapes differently in each.
-INSTALLER_BASENAME = "EasyPDF"
-ZIP_BASENAME = "Easy-PDF"
+INSTALLER_BASENAME = "TGImprint"
+ZIP_BASENAME = "TG-Imprint"
 
 # Where the app sends people. The guide and the product page do not exist
 # until the release that publishes them; the Help menu says so rather than
 # opening a 404.
-HOME_URL = "https://tgstudios.app/easy-pdf/"
-USER_GUIDE_URL = "https://tgstudios.app/easy-pdf-guide/"
+HOME_URL = "https://tgstudios.app/tg-imprint/"
+USER_GUIDE_URL = "https://tgstudios.app/tg-imprint-guide/"
 DONATE_URL = "https://tgstudios.app/donate/"
 FEEDBACK_EMAIL = "hello@tgstudios.app"
 WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
 
 # ------------------------------------------------------------------ files ---
 #: The native document: self-contained UTF-8 HTML inside a file type the app
-#: owns, so double clicking one opens Easy PDF rather than a browser or a
+#: owns, so double clicking one opens TG Imprint rather than a browser or a
 #: mail filter's suspicion. It is still HTML: rename it .html and any
 #: browser reads it, so nobody's writing is ever trapped in this app.
-DOC_EXTENSION = ".epdf"
-DOC_WILDCARD = "Easy PDF documents (*.epdf)|*.epdf"
+DOC_EXTENSION = ".imprint"
+DOC_WILDCARD = "TG Imprint documents (*.imprint)|*.imprint"
 WEB_PAGE_WILDCARD = "Web page (*.html)|*.html"
 #: docs/STRINGS.md: draft. What Explorer shows as the file type.
-DOC_TYPE_DESCRIPTION = "Easy PDF document"
+DOC_TYPE_DESCRIPTION = "TG Imprint document"
 #: What Open will take. Anything not native is imported and then saved as
 #: native on the first Save.
-IMPORT_EXTENSIONS = (".epdf", ".html", ".htm", ".txt", ".md", ".markdown",
+IMPORT_EXTENSIONS = (".imprint", ".html", ".htm", ".txt", ".md", ".markdown",
                      ".docx", ".pdf")
 OPEN_WILDCARD = (
-    "All documents (*.epdf;*.html;*.htm;*.txt;*.md;*.docx;*.pdf)|"
-    "*.epdf;*.html;*.htm;*.txt;*.md;*.markdown;*.docx;*.pdf|"
-    "Easy PDF documents (*.epdf)|*.epdf|"
+    "All documents (*.imprint;*.html;*.htm;*.txt;*.md;*.docx;*.pdf)|"
+    "*.imprint;*.html;*.htm;*.txt;*.md;*.markdown;*.docx;*.pdf|"
+    "TG Imprint documents (*.imprint)|*.imprint|"
     "Web pages (*.html;*.htm)|*.html;*.htm|"
     "PDF files (*.pdf)|*.pdf|"
     "Word documents (*.docx)|*.docx|"

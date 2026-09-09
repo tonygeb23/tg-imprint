@@ -44,7 +44,7 @@ _HEADING_ID_RE = re.compile(r"^heading([1-9])$", re.IGNORECASE)
 _LIST_STYLE_RE = re.compile(r"^list (?:bullet|number|continue)\s+([2-9])$", re.IGNORECASE)
 
 # docs/STRINGS.md, Worker A.
-MSG_NOT_WORD = "That file is not a Word document Easy PDF can open. It needs a .docx file."
+MSG_NOT_WORD = "That file is not a Word document TG Imprint can open. It needs a .docx file."
 MSG_TRACKED = ("The document has tracked changes, which are not read here. Accept the "
                "changes in Word first, then open it again.")
 MSG_FOOTNOTES = "Footnotes and endnotes were not read. Put anything you need from them in the text."

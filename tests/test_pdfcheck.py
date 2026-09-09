@@ -22,7 +22,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import fitz  # noqa: E402
 import pikepdf  # noqa: E402
 
-from easypdf import pdfcheck, pdfexport  # noqa: E402
+from tgimprint import pdfcheck, pdfexport  # noqa: E402
 
 CHECKS = []
 
@@ -35,7 +35,7 @@ def check(label, condition, detail=""):
 
 BODY = open(os.path.join(HERE, "tests", "fixtures", "sample-body.html"), encoding="utf-8").read()
 META = {"title": "Sample document", "author": "Tony Gebhard", "lang": "en-US"}
-WORK = tempfile.mkdtemp(prefix="easypdf check é ")
+WORK = tempfile.mkdtemp(prefix="tgimprint check é ")
 CLEAN = os.path.join(WORK, "clean.pdf")
 pdfexport.export_html(BODY, CLEAN, META)
 
@@ -147,7 +147,7 @@ check("removing the identifier fails only the identifier check",
       not result(report, "identifier").passed and report.failed_names() == [])
 check("and the gate stays open, because the gate excludes the identifier itself",
       report.pdfua_gate and not report.passed)
-check("its detail says when Easy PDF writes one",
+check("its detail says when TG Imprint writes one",
       "only when every other check passes" in result(report, "identifier").detail)
 
 

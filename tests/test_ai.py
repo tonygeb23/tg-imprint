@@ -1,6 +1,6 @@
 """The provider layer: three envelopes, three readers, one set of sentences.
 
-Everything else in Easy PDF is deterministic. This is the one layer that
+Everything else in TG Imprint is deterministic. This is the one layer that
 can be slow, can cost money, can fail for reasons outside the machine, and
 sends somebody's picture to a company. So these checks are about what it
 must never do: never raise, never put a key in an address, never send a
@@ -19,7 +19,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from easypdf import ai  # noqa: E402
+from tgimprint import ai  # noqa: E402
 
 CHECKS = []
 

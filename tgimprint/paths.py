@@ -1,4 +1,4 @@
-"""Where Easy PDF keeps its own files, and where it is running from.
+"""Where TG Imprint keeps its own files, and where it is running from.
 
 Settings, recent files and autosave snapshots live under the user's roaming
 AppData in a TG Studios folder, the same place every TG Studios app uses, so
@@ -32,7 +32,7 @@ def resource(*parts):
 
 
 def config_dir():
-    """%APPDATA%\\TG Studios\\Easy PDF, created on first use.
+    """%APPDATA%\\TG Studios\\TG Imprint, created on first use.
 
     Roaming rather than local on purpose: settings and recent files are
     small and are the user's, and following them to another machine is a

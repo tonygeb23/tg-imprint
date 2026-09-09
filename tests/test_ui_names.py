@@ -7,8 +7,8 @@ Walks every dialog the window can show, built with fake data: every
 focusable control has an accessible name (its own label, a static text
 before it, or a _Named accessible object), no dead tab stop (the picture
 preview refuses focus), and then two greps: no wx.MessageBox with a
-newline in it anywhere under easypdf/ui/, and no synchronous RunScript(
-anywhere under easypdf/ui/ or in editor_page.py.
+newline in it anywhere under tgimprint/ui/, and no synchronous RunScript(
+anywhere under tgimprint/ui/ or in editor_page.py.
 
 The window holds a WebView, so the process ends with os._exit.
 """
@@ -24,23 +24,23 @@ u32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
-os.environ["APPDATA"] = tempfile.mkdtemp(prefix="easypdf-test-appdata-")
-os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="easypdf-test-local-")
+os.environ["APPDATA"] = tempfile.mkdtemp(prefix="tgimprint-test-appdata-")
+os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="tgimprint-test-local-")
 
 import wx  # noqa: E402
 
-from easypdf import constants as C  # noqa: E402
-from easypdf import updatedialog  # noqa: E402
-from easypdf.settings import Settings  # noqa: E402
-from easypdf.ui import dialogs, keymap, main_window  # noqa: E402
-from easypdf.ui.doc_properties_dialog import DocPropertiesDialog  # noqa: E402
-from easypdf.ui.find_dialog import FindDialog  # noqa: E402
-from easypdf.ui.hyperlink_dialog import LinkDialog  # noqa: E402
-from easypdf.ui.image_dialog import PictureDialog  # noqa: E402
-from easypdf.ui.pictures_dialog import PicturesDialog  # noqa: E402
-from easypdf.ui.preferences_dialog import PreferencesDialog  # noqa: E402
-from easypdf.ui.structure_dialog import StructureDialog  # noqa: E402
-from easypdf.ui.table_dialog import TableDialog  # noqa: E402
+from tgimprint import constants as C  # noqa: E402
+from tgimprint import updatedialog  # noqa: E402
+from tgimprint.settings import Settings  # noqa: E402
+from tgimprint.ui import dialogs, keymap, main_window  # noqa: E402
+from tgimprint.ui.doc_properties_dialog import DocPropertiesDialog  # noqa: E402
+from tgimprint.ui.find_dialog import FindDialog  # noqa: E402
+from tgimprint.ui.hyperlink_dialog import LinkDialog  # noqa: E402
+from tgimprint.ui.image_dialog import PictureDialog  # noqa: E402
+from tgimprint.ui.pictures_dialog import PicturesDialog  # noqa: E402
+from tgimprint.ui.preferences_dialog import PreferencesDialog  # noqa: E402
+from tgimprint.ui.structure_dialog import StructureDialog  # noqa: E402
+from tgimprint.ui.table_dialog import TableDialog  # noqa: E402
 
 CHECKS = []
 DOT = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhf"
@@ -63,10 +63,10 @@ def named(control, siblings_before):
     """Why this control has a name, or "" when it has none."""
     if isinstance(control, SELF_LABELLED) and control.GetLabel().strip():
         return "its own label"
-    if getattr(control, "_easypdf_accessible", None) is not None:
+    if getattr(control, "_tgimprint_accessible", None) is not None:
         return "a _Named accessible object"
     parent = control.GetParent()
-    if parent is not None and getattr(parent, "_easypdf_accessible", None) is not None:
+    if parent is not None and getattr(parent, "_tgimprint_accessible", None) is not None:
         return "its composite's _Named accessible object"
     name = (control.GetName() or "").strip()
     if name and name not in DEFAULT_NAMES:
@@ -116,7 +116,7 @@ problems = []
 walk(frame.toolbar, "toolbar", problems)
 check("every toolbar control is named", not problems, problems)
 check("the toolbar style choice carries an accessible object",
-      getattr(frame.toolbar.style, "_easypdf_accessible", None) is not None)
+      getattr(frame.toolbar.style, "_tgimprint_accessible", None) is not None)
 check("the status bar has four fields", frame.status.GetFieldsCount() == 4)
 check("the window has its icons", frame.GetIcons().GetIconCount() == 10)
 check("the window title names the app", C.APP_NAME in frame.GetTitle())
@@ -173,7 +173,7 @@ audit("Text dialog", d)
 check("Text dialog: the field is read only with the text in it",
       not d.field.IsEditable() and "line two" in d.field.GetValue())
 d.Destroy()
-d = dialogs.RecoveryDialog(frame, [("snap.epdf", "doc.epdf", "2026-09-09 10:00", "Doc")])
+d = dialogs.RecoveryDialog(frame, [("snap.imprint", "doc.imprint", "2026-09-09 10:00", "Doc")])
 audit("Recovery", d)
 d.Destroy()
 d = dialogs.KeyboardHelpDialog(frame, keymap.render_text())
@@ -190,7 +190,7 @@ audit("Download progress", d)
 d.Destroy()
 
 print("\nThe source rules")
-ui_dir = os.path.join(HERE, "easypdf", "ui")
+ui_dir = os.path.join(HERE, "tgimprint", "ui")
 offenders = []
 for name in sorted(os.listdir(ui_dir)):
     if not name.endswith(".py"):
@@ -199,7 +199,7 @@ for name in sorted(os.listdir(ui_dir)):
     for match in re.finditer(r"wx\.MessageBox\((.*?)\)", text, re.S):
         if "\\n" in match.group(1):
             offenders.append("%s: %s" % (name, match.group(0)[:80].replace("\n", " ")))
-check("no wx.MessageBox with a newline anywhere under easypdf/ui/", not offenders, offenders)
+check("no wx.MessageBox with a newline anywhere under tgimprint/ui/", not offenders, offenders)
 sync = []
 for name in sorted(os.listdir(ui_dir)) + ["../editor_page.py"]:
     if not name.endswith(".py"):
@@ -208,9 +208,9 @@ for name in sorted(os.listdir(ui_dir)) + ["../editor_page.py"]:
     for line_no, line in enumerate(text.splitlines(), 1):
         if re.search(r"(?<![A-Za-z_])RunScript\(", line) and "RunScriptAsync" not in line:
             sync.append("%s:%d: %s" % (name, line_no, line.strip()[:80]))
-check("no synchronous RunScript( under easypdf/ui/ or in editor_page.py", not sync, sync)
+check("no synchronous RunScript( under tgimprint/ui/ or in editor_page.py", not sync, sync)
 dashes = []
-for folder, files in ((ui_dir, os.listdir(ui_dir)), (os.path.join(HERE, "easypdf"), ["editor_page.py", "settings.py"])):
+for folder, files in ((ui_dir, os.listdir(ui_dir)), (os.path.join(HERE, "tgimprint"), ["editor_page.py", "settings.py"])):
     for name in files:
         if name.endswith(".py"):
             text = open(os.path.join(folder, name), encoding="utf-8").read()
@@ -249,7 +249,7 @@ try:
     import comtypes.client as _cc
     _cc.GetModule("UIAutomationCore.dll")
     from comtypes.gen import UIAutomationClient as _U
-    from easypdf.ui.doc_properties_dialog import DocPropertiesDialog
+    from tgimprint.ui.doc_properties_dialog import DocPropertiesDialog
 
     _frame = wx.Frame(None)
     _dlg = DocPropertiesDialog(_frame, {"title": "", "author": "",

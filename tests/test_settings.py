@@ -12,8 +12,8 @@ import tempfile
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
-from easypdf import constants as C  # noqa: E402
-from easypdf.settings import DEFAULTS, Settings  # noqa: E402
+from tgimprint import constants as C  # noqa: E402
+from tgimprint.settings import DEFAULTS, Settings  # noqa: E402
 
 CHECKS = []
 
@@ -24,7 +24,7 @@ def check(label, condition, detail=""):
           + (("  " + str(detail)) if detail != "" and not condition else ""))
 
 
-folder = tempfile.mkdtemp(prefix="easypdf-settings-")
+folder = tempfile.mkdtemp(prefix="tgimprint-settings-")
 path = os.path.join(folder, "settings.json")
 
 print("\nA missing file gives the defaults")
@@ -43,9 +43,9 @@ s["margin_inches"] = 0.75
 s["font_points"] = 12
 s["lang"] = "fr-FR"
 s["window"] = {"x": 10, "y": 20, "width": 900, "height": 700, "maximised": False}
-s.remember(os.path.join(folder, "one.epdf"))
-s.remember(os.path.join(folder, "two.epdf"))
-s.remember(os.path.join(folder, "one.epdf"))      # moves to the top, no duplicate
+s.remember(os.path.join(folder, "one.imprint"))
+s.remember(os.path.join(folder, "two.imprint"))
+s.remember(os.path.join(folder, "one.imprint"))      # moves to the top, no duplicate
 check("save writes the file", s.save() and os.path.exists(path))
 t = Settings(path)
 check("load reports loaded", t.load() == "loaded")
@@ -55,15 +55,15 @@ check("the margins came back", t["margin_inches"] == 0.75)
 check("the language came back", t["lang"] == "fr-FR")
 check("the window geometry came back", t["window"]["width"] == 900)
 check("recent files are ordered newest first without duplicates",
-      [os.path.basename(p) for p in t["recent"]] == ["one.epdf", "two.epdf"], t["recent"])
+      [os.path.basename(p) for p in t["recent"]] == ["one.imprint", "two.imprint"], t["recent"])
 check("recent_existing drops files that are gone", t.recent_existing() == [])
-t.forget(os.path.join(folder, "two.epdf"))
-check("forget removes one", [os.path.basename(p) for p in t["recent"]] == ["one.epdf"])
+t.forget(os.path.join(folder, "two.imprint"))
+check("forget removes one", [os.path.basename(p) for p in t["recent"]] == ["one.imprint"])
 
 print("\nThe recent list is capped")
 u = Settings(path)
 for i in range(C.RECENT_FILES + 5):
-    u.remember(os.path.join(folder, "doc%d.epdf" % i))
+    u.remember(os.path.join(folder, "doc%d.imprint" % i))
 check("at constants.RECENT_FILES entries", len(u["recent"]) == C.RECENT_FILES, len(u["recent"]))
 
 print("\nA corrupt file gives the defaults and keeps the broken copy")

@@ -85,7 +85,7 @@ class EditorView(wx.Panel):
             self.web.EnableAccessToDevTools(False)
         except Exception:
             pass
-        self.web.AddScriptMessageHandler("easypdf")
+        self.web.AddScriptMessageHandler("tgimprint")
         self.web.Bind(webview.EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, self._on_message)
         self.web.Bind(webview.EVT_WEBVIEW_SCRIPT_RESULT, self._on_result)
         self.web.Bind(webview.EVT_WEBVIEW_LOADED, self._on_loaded)

@@ -1,4 +1,4 @@
-"""Registering the .epdf document type, per user, from inside the app.
+"""Registering the .imprint document type, per user, from inside the app.
 
 Velopack installs the program and knows nothing about file types, so the
 app registers its own: on the after-install and after-update hooks it
@@ -97,7 +97,7 @@ def unregister(ext=None, progid=None):
     """Remove the keys this app wrote, and only those. Returns (ok, message).
 
     The extension key is removed only while it still points at our ProgId;
-    if another program has taken .epdf over, its choice is left alone.
+    if another program has taken .imprint over, its choice is left alone.
     """
     if winreg is None:
         return False, "Not Windows."

@@ -62,7 +62,7 @@ FLAGS = (
 )
 
 # docs/STRINGS.md, Worker A.
-MSG_NO_ENGINE = ("No PDF engine was found. Easy PDF makes its PDF with Microsoft Edge, "
+MSG_NO_ENGINE = ("No PDF engine was found. TG Imprint makes its PDF with Microsoft Edge, "
                  "the Microsoft Edge WebView2 runtime or Google Chrome, and none of "
                  "them is installed. Install one of them, then export again. Until "
                  "then, Save as web page keeps everything.")
@@ -300,7 +300,7 @@ def render_pdf(html_text, out_path, timeout=90, engine=None):
     out_folder = os.path.dirname(out_path)
     if not os.path.isdir(out_folder):
         raise EngineError(MSG_BAD_FOLDER % out_folder)
-    work = tempfile.mkdtemp(prefix="easypdf-render-")
+    work = tempfile.mkdtemp(prefix="tgimprint-render-")
     try:
         html_path = os.path.join(work, "document.html")
         with open(html_path, "w", encoding="utf-8") as handle:

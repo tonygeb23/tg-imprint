@@ -226,7 +226,7 @@ def msg_recovered_count(count):
 MSG_RTL = ("The document holds Arabic or Hebrew text. This release has not been "
            "checked with a right to left screen reader, and the PDF may read in "
            "the wrong order.")
-MSG_SCRIPT = "Script in the file was removed. It cannot run inside Easy PDF."
+MSG_SCRIPT = "Script in the file was removed. It cannot run inside TG Imprint."
 
 
 # ---------------------------------------------------------------- tree ---

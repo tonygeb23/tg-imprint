@@ -42,13 +42,13 @@ u32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
-os.environ["APPDATA"] = tempfile.mkdtemp(prefix="easypdf-test-appdata-")
-os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="easypdf-test-local-")
+os.environ["APPDATA"] = tempfile.mkdtemp(prefix="tgimprint-test-appdata-")
+os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="tgimprint-test-local-")
 
 import wx  # noqa: E402
 
-from easypdf.settings import Settings  # noqa: E402
-from easypdf.ui import main_window  # noqa: E402
+from tgimprint.settings import Settings  # noqa: E402
+from tgimprint.ui import main_window  # noqa: E402
 
 CHECKS = []
 SKIPPED = []

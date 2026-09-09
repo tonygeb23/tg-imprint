@@ -1,5 +1,13 @@
 # Easy PDF, the decisions (2026-09-09)
 
+> **Renamed 2026-09-09.** Tony chose **TG Imprint**. Every path below that
+> reads `easypdf/` is now `tgimprint/`, the document extension is
+> `.imprint`, and the frozen names are `TGImprint`, `tg-imprint` and
+> `TGStudios.TGImprint`. The old name is left in this document because it
+> is the record of how the decision was reached.
+
+
+
 Round 1 of the Overseer. One entry per decision in `ANALYSIS.md` section
 10, then one per risk in `CHALLENGE.md`. Each entry gives the decision, one
 paragraph of why, and what it changes in the briefs. The last section,

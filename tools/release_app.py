@@ -30,8 +30,8 @@ import sys
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
-from easypdf import constants as C            # noqa: E402
-from easypdf import appupdate                 # noqa: E402
+from tgimprint import constants as C            # noqa: E402
+from tgimprint import appupdate                 # noqa: E402
 
 PRIVATE_KEY_PATH = os.path.join(
     os.path.expanduser("~"), ".tgstudios", "update-private-key.pem")
@@ -186,7 +186,7 @@ def stage():
         parsed, message = appupdate.read_envelope(fh.read())
     if parsed is None:
         raise SystemExit("FAILED: the app cannot verify its own manifest: %s\n"
-                         "easypdf/appupdate.py has a different public key from\n%s"
+                         "tgimprint/appupdate.py has a different public key from\n%s"
                          % (message, PRIVATE_KEY_PATH))
 
     print("Staged %s" % out)

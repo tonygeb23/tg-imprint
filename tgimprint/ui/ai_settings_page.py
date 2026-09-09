@@ -29,7 +29,7 @@ import wx
 from .. import ai, describe, secrets
 from .describe_dialog import ConsentDialog, find_announcer, speech_channel
 
-#: What the Test button asks, over a picture Easy PDF draws itself, so the
+#: What the Test button asks, over a picture TG Imprint draws itself, so the
 #: test sends nothing of the user's.
 TEST_PROMPT = ("In at most ten words, say what shape and colour is in this "
                "picture.")
@@ -245,7 +245,7 @@ class AISettingsPage(wx.Panel):
         self._set_text(self.model_note,
                        "Empty means %s, chosen for accuracy. Get the list "
                        "asks %s what it really has. Test sends a tiny "
-                       "picture Easy PDF draws itself, nothing of yours."
+                       "picture TG Imprint draws itself, nothing of yours."
                        % (ai.DEFAULT_MODELS.get(provider, "the usual model"),
                           who))
         keeping = self.model.GetValue()
@@ -289,9 +289,9 @@ class AISettingsPage(wx.Panel):
     def _on_drop_deck(self, _event=None):
         provider = self.chosen_provider()
         who = ai.PROVIDER_NAMES[provider]
-        question = ("Easy PDF will read the key for %s that TG Drop Deck "
+        question = ("TG Imprint will read the key for %s that TG Drop Deck "
                     "keeps in Windows Credential Manager, and keep its own "
-                    "copy under Easy PDF's name. Nothing is sent anywhere. "
+                    "copy under TG Imprint's name. Nothing is sent anywhere. "
                     "Copy the key?" % who)
         if not self.ask_yes(question, "Use the key from TG Drop Deck?",
                             "&Copy the key", "&Don't copy"):
@@ -334,7 +334,7 @@ class AISettingsPage(wx.Panel):
             ok, got = ai.list_models(provider, key)
             wx.CallAfter(self._listed, generation, provider, ok, got)
 
-        threading.Thread(target=work, name="easypdf-model-list",
+        threading.Thread(target=work, name="tgimprint-model-list",
                          daemon=True).start()
 
     def _listed(self, generation, provider, ok, got):
@@ -377,7 +377,7 @@ class AISettingsPage(wx.Panel):
             wx.CallAfter(self._tested, generation, who, ok, text,
                          time.monotonic() - started)
 
-        threading.Thread(target=work, name="easypdf-key-test",
+        threading.Thread(target=work, name="tgimprint-key-test",
                          daemon=True).start()
 
     def _tested(self, generation, who, ok, text, took):

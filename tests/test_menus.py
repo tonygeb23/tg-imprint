@@ -24,14 +24,14 @@ u32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
-os.environ["APPDATA"] = tempfile.mkdtemp(prefix="easypdf-test-appdata-")
-os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="easypdf-test-local-")
+os.environ["APPDATA"] = tempfile.mkdtemp(prefix="tgimprint-test-appdata-")
+os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="tgimprint-test-local-")
 
 import wx  # noqa: E402
 
-from easypdf.settings import Settings  # noqa: E402
-from easypdf.ui import keymap  # noqa: E402
-from easypdf.ui import main_window  # noqa: E402
+from tgimprint.settings import Settings  # noqa: E402
+from tgimprint.ui import keymap  # noqa: E402
+from tgimprint.ui import main_window  # noqa: E402
 
 CHECKS = []
 
@@ -193,7 +193,7 @@ try:
 except OSError:
     on_disk = ""
 check("docs/KEYBOARD.md exists", bool(on_disk))
-check("and matches keymap.render_markdown() exactly (regenerate with python easypdf/ui/keymap.py)",
+check("and matches keymap.render_markdown() exactly (regenerate with python tgimprint/ui/keymap.py)",
       on_disk == rendered)
 check("it documents the AltGr rule", "AltGr" in rendered)
 check("it lists every entry", all(e.plain_label in rendered for e in entries))

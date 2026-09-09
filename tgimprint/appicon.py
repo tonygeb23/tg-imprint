@@ -1,4 +1,4 @@
-"""The Easy PDF mark, drawn rather than loaded.
+"""The TG Imprint mark, drawn rather than loaded.
 
 A page with a folded corner, three lines of text on it, the top line lit in
 the TG Studios amber: a document whose heading is what matters. The case,

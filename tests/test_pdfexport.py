@@ -28,8 +28,8 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import fitz  # noqa: E402
 import pikepdf  # noqa: E402
 
-from easypdf import constants as C  # noqa: E402
-from easypdf import pdfcheck, pdfengine, pdfexport  # noqa: E402
+from tgimprint import constants as C  # noqa: E402
+from tgimprint import pdfcheck, pdfengine, pdfexport  # noqa: E402
 
 CHECKS = []
 
@@ -43,7 +43,7 @@ def check(label, condition, detail=""):
 BODY = open(os.path.join(HERE, "tests", "fixtures", "sample-body.html"), encoding="utf-8").read()
 META = {"title": "Sample document", "author": "Tony Gebhard", "lang": "en-US",
         "subject": "The export fixture"}
-WORK = tempfile.mkdtemp(prefix="easypdf export é ")
+WORK = tempfile.mkdtemp(prefix="tgimprint export é ")
 
 
 def elements(path):
@@ -302,7 +302,7 @@ try:
     except pdfengine.EngineError as exc:
         check("junk after the PDF header raises EngineError with a sentence", str(exc) == pdfexport.MSG_DAMAGED, exc)
         check("and no temp path or library words in it",
-              "easypdf-export" not in str(exc) and "trailer" not in str(exc)
+              "tgimprint-export" not in str(exc) and "trailer" not in str(exc)
               and tempfile.gettempdir().lower() not in str(exc).lower())
     except Exception as exc:
         check("junk after the PDF header raises EngineError, not %s" % type(exc).__name__, False, exc)
@@ -356,7 +356,7 @@ except pdfengine.EngineError as exc:
 finally:
     pdfengine.engines = real
 check("nothing was written", not os.path.exists(os.path.join(WORK, "none.pdf")))
-leftovers = [n for n in os.listdir(tempfile.gettempdir()) if n.startswith("easypdf-export-")]
+leftovers = [n for n in os.listdir(tempfile.gettempdir()) if n.startswith("tgimprint-export-")]
 check("no export folder is left behind", not leftovers, leftovers)
 
 shutil.rmtree(WORK, ignore_errors=True)

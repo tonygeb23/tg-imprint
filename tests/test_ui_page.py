@@ -28,15 +28,15 @@ u32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
-os.environ["APPDATA"] = tempfile.mkdtemp(prefix="easypdf-test-appdata-")
-os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="easypdf-test-local-")
+os.environ["APPDATA"] = tempfile.mkdtemp(prefix="tgimprint-test-appdata-")
+os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="tgimprint-test-local-")
 
 import wx  # noqa: E402
 
-from easypdf import constants as C  # noqa: E402
-from easypdf import paths  # noqa: E402
-from easypdf.settings import Settings  # noqa: E402
-from easypdf.ui import main_window  # noqa: E402
+from tgimprint import constants as C  # noqa: E402
+from tgimprint import paths  # noqa: E402
+from tgimprint.settings import Settings  # noqa: E402
+from tgimprint.ui import main_window  # noqa: E402
 
 CHECKS = []
 DOT = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhf"
@@ -399,7 +399,7 @@ def main():
     # ---------------------------------------------------------------------------
     print("\nThe drift test: the real DOM through the normaliser")
     try:
-        from easypdf import htmlclean
+        from tgimprint import htmlclean
     except ImportError:
         htmlclean = None
     set_body("<p>Alpha beta</p><p>Gamma</p>")
@@ -433,8 +433,8 @@ def main():
 
     # ---------------------------------------------------------------------------
     print("\nThe handoff: a second launch's path opens here")
-    from easypdf import handoff  # noqa: E402
-    doc = os.path.join(tempfile.mkdtemp(), "handed.epdf")
+    from tgimprint import handoff  # noqa: E402
+    doc = os.path.join(tempfile.mkdtemp(), "handed.imprint")
     with open(doc, "w", encoding="utf-8") as fh:
         fh.write("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Handed over</title>"
                  "</head><body><h1>Handed over</h1><p>From the second launch.</p></body></html>")
@@ -469,7 +469,7 @@ def main():
 
     # ---------------------------------------------------------------------------
     print("\nThe update flow hands the token to the Velopack client, after the flush")
-    from easypdf import appupdate  # noqa: E402
+    from tgimprint import appupdate  # noqa: E402
     seen = {}
     orig_run = appupdate.run_installer
     orig_show = main_window.dialogs.show_text
@@ -516,7 +516,7 @@ def main():
     # ---------------------------------------------------------------------------
     print("\nSnapshots: a clean close leaves none, a crash leaves one")
     try:
-        from easypdf import docfile
+        from tgimprint import docfile
     except ImportError:
         docfile = None
     frame.modified = True

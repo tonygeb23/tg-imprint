@@ -30,9 +30,9 @@ except Exception:
 
 import wx   # noqa: E402
 
-from easypdf import constants as C          # noqa: E402
-from easypdf import handoff                 # noqa: E402
-from easypdf.singleinstance import SingleInstance   # noqa: E402
+from tgimprint import constants as C          # noqa: E402
+from tgimprint import handoff                 # noqa: E402
+from tgimprint.singleinstance import SingleInstance   # noqa: E402
 
 CHECKS = []
 
@@ -50,9 +50,9 @@ DOC = os.path.join(tempfile.gettempdir(), "café 文書 sample.html")
 SECOND_LAUNCH = r"""
 import sys
 sys.path.insert(0, %r)
-from easypdf import handoff
-from easypdf.singleinstance import SingleInstance
-from easypdf import constants as C
+from tgimprint import handoff
+from tgimprint.singleinstance import SingleInstance
+from tgimprint import constants as C
 si = SingleInstance(C.INSTANCE_SLUG)
 found = si.find_existing()
 print("found", bool(found))
@@ -65,7 +65,7 @@ print("\nThe running copy receives a path from a second launch")
 app = wx.App(False)
 instance = SingleInstance(C.INSTANCE_SLUG)
 check("this process holds the single instance", not instance.already_running,
-      "another Easy PDF is running; close it and rerun" if instance.already_running else "")
+      "another TG Imprint is running; close it and rerun" if instance.already_running else "")
 frame = wx.Frame(None, title="handoff test")
 instance.tag_window(frame)
 received = []

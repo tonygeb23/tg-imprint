@@ -334,7 +334,7 @@ class DescribeImageDialog(wx.Dialog, _Threaded):
                 self._later(generation, self._consent_then_send, provider,
                             long, kilobytes)
 
-            self._start("easypdf-describe-measure", measure)
+            self._start("tgimprint-describe-measure", measure)
             return
         self._send(provider, long)
 
@@ -372,7 +372,7 @@ class DescribeImageDialog(wx.Dialog, _Threaded):
             self._later(generation, self._done, ok, text, provider,
                         time.monotonic() - started)
 
-        self._start("easypdf-describe-image", work)
+        self._start("tgimprint-describe-image", work)
 
     def _done(self, ok, text, provider, took):
         who = ai.PROVIDER_NAMES.get(provider, provider)
@@ -541,7 +541,7 @@ class DescribeDocumentDialog(wx.Dialog, _Threaded):
             words, pictures, kilobytes = describe.payload_estimate(body, images)
             self._later(generation, self._measured, words, pictures, kilobytes)
 
-        self._start("easypdf-describe-measure", work)
+        self._start("tgimprint-describe-measure", work)
 
     def _measured(self, words, pictures, kilobytes):
         self._estimate = (words, pictures, kilobytes)
@@ -594,7 +594,7 @@ class DescribeDocumentDialog(wx.Dialog, _Threaded):
             self._later(generation, self._done, ok, text, provider,
                         time.monotonic() - started)
 
-        self._start("easypdf-describe-document", work)
+        self._start("tgimprint-describe-document", work)
 
     def _progress(self, text):
         self._show_status(text)

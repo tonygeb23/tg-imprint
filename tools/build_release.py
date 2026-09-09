@@ -2,20 +2,20 @@
 
     python tools/build_release.py
 
-Produces, under %LOCALAPPDATA%\\TG Studios Build\\easy-pdf:
-    dist\\Easy PDF\\              the frozen program (PyInstaller, one folder)
+Produces, under %LOCALAPPDATA%\\TG Studios Build\\tg-imprint:
+    dist\\TG Imprint\\              the frozen program (PyInstaller, one folder)
     releases\\                    Velopack's output: the Setup, the portable zip,
                                  the full and delta packages, releases.win.json
 and copies back into dist/ here:
-    dist\\installer\\EasyPDF-<version>-Setup.exe
-    dist\\Easy-PDF-<version>-windows.zip
+    dist\\installer\\TGImprint-<version>-Setup.exe
+    dist\\TG-Imprint-<version>-windows.zip
     dist\\releases\\              the feed files the release tool uploads
 
 Velopack (vpk) replaces Inno Setup for this program and every TG Studios
 program after it (Tony, 2026-09-09). It gives delta updates and an update
 that is applied in place with no installer window; what it does not give
 is a signature, which is why tools/release_app.py still signs a manifest
-and easypdf/appupdate.py still checks it before letting Velopack apply
+and tgimprint/appupdate.py still checks it before letting Velopack apply
 anything.
 
 Everything is built OUTSIDE Dropbox and only the finished artefacts are
@@ -33,18 +33,18 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from easypdf import constants as C
+from tgimprint import constants as C
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 BUILD_ROOT = os.path.join(os.environ.get("LOCALAPPDATA", HERE),
-                          "TG Studios Build", "easy-pdf")
+                          "TG Studios Build", "tg-imprint")
 WORK = os.path.join(BUILD_ROOT, "work")
 DIST = os.path.join(BUILD_ROOT, "dist")
 RELEASES = os.path.join(BUILD_ROOT, "releases")
 FINAL = os.path.join(HERE, "dist")
 BUNDLE = os.path.join(DIST, C.APP_NAME)
-ICON = os.path.join(HERE, "assets", "easypdf.ico")
+ICON = os.path.join(HERE, "assets", "tgimprint.ico")
 MAIN_EXE = C.APP_NAME + ".exe"
 CHANNEL = "win"
 
@@ -78,12 +78,12 @@ def package_name(version=None, kind="full"):
 
 
 def make_icon():
-    """Regenerate assets/easypdf.ico from easypdf.appicon, every build, so the
+    """Regenerate assets/tgimprint.ico from tgimprint.appicon, every build, so the
     icon stamped into the exe and the Setup can never drift from the mark the
     window draws at runtime."""
     import wx
     app = wx.App(redirect=False)          # noqa: F841  a colour needs one
-    from easypdf import appicon
+    from tgimprint import appicon
     os.makedirs(os.path.dirname(ICON), exist_ok=True)
     appicon.write_ico(ICON)
     if not wx.Icon(ICON, wx.BITMAP_TYPE_ICO).IsOk():

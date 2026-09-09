@@ -1,4 +1,4 @@
-"""Start Easy PDF with no console window.
+"""Start TG Imprint with no console window.
 
 This is what the desktop shortcut points at. Run it with pythonw.
 """

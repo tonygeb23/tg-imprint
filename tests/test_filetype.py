@@ -1,10 +1,10 @@
-"""The .epdf document type is registered by the app, per user, and removed
+"""The .imprint document type is registered by the app, per user, and removed
 by the app, and nobody else's registration is touched.
 
 Velopack installs the program and knows nothing about file types, so the
 app writes its own keys on the install and update hooks and removes them
 on the uninstall hook. This test uses a probe extension and a probe ProgId
-so the real .epdf registration on this machine is never touched.
+so the real .imprint registration on this machine is never touched.
 
     python tests/test_filetype.py
 """
@@ -17,7 +17,7 @@ sys.path.insert(0, HERE)
 
 import winreg   # noqa: E402
 
-from easypdf import filetype   # noqa: E402
+from tgimprint import filetype   # noqa: E402
 
 CHECKS = []
 
@@ -28,10 +28,10 @@ def check(label, condition, detail=""):
           + (("  " + str(detail)) if detail != "" else ""))
 
 
-EXT = ".epdfprobe%d" % os.getpid()
-PROGID = "TGStudios.EasyPDF.Probe%d" % os.getpid()
+EXT = ".imprintprobe%d" % os.getpid()
+PROGID = "TGStudios.TGImprint.Probe%d" % os.getpid()
 OTHER = "Somebody.Else.Probe%d" % os.getpid()
-EXE = r"C:\Probe Folder\Easy PDF.exe"
+EXE = r"C:\Probe Folder\TG Imprint.exe"
 
 
 def value(path):
@@ -57,10 +57,10 @@ check("the open command quotes the executable and passes the file",
 check("registered() agrees", filetype.registered(EXT, PROGID))
 
 print("\nRegistering again is harmless, and moves with the program")
-ok, _ = filetype.register(r"C:\Elsewhere\Easy PDF.exe", EXT, PROGID, "Probe document")
+ok, _ = filetype.register(r"C:\Elsewhere\TG Imprint.exe", EXT, PROGID, "Probe document")
 check("a second registration succeeds", ok)
 check("and the command follows the new path",
-      '"C:\\Elsewhere\\Easy PDF.exe"' in filetype.open_command(PROGID))
+      '"C:\\Elsewhere\\TG Imprint.exe"' in filetype.open_command(PROGID))
 
 print("\nRemoving")
 ok, message = filetype.unregister(EXT, PROGID)

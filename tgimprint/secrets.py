@@ -1,7 +1,7 @@
 """Where an AI service key is kept, which is not a document and not settings.json.
 
-Easy PDF's copy of TG Drop Deck's secrets.py. The mechanics are identical and
-deliberately unchanged; only the names differ. Easy PDF keeps one kind of
+TG Imprint's copy of TG Drop Deck's secrets.py. The mechanics are identical and
+deliberately unchanged; only the names differ. TG Imprint keeps one kind of
 secret: the key for Claude, ChatGPT or Gemini that the describer uses. It is
 billable, so it lives in Windows Credential Manager under a name that says
 what it is, never in a document file and never in settings.json, which a
@@ -43,7 +43,7 @@ from ctypes import wintypes
 
 #: One target per station, so removing a station removes its key and a user
 #: reading Credential Manager can tell what each entry is for.
-TARGET_PREFIX = "Easy PDF AI key: "
+TARGET_PREFIX = "TG Imprint AI key: "
 
 _CRED_TYPE_GENERIC = 1
 #: Kept for this user on this machine, and NOT roamed to other machines. A
@@ -114,7 +114,7 @@ def store(station, key, prefix=TARGET_PREFIX):
     credential.Flags = 0
     credential.Type = _CRED_TYPE_GENERIC
     credential.TargetName = target_for(station, prefix)
-    credential.Comment = "An AI service key kept by Easy PDF. Safe to delete."
+    credential.Comment = "An AI service key kept by TG Imprint. Safe to delete."
     credential.CredentialBlobSize = len(blob)
     credential.CredentialBlob = ctypes.cast(
         ctypes.pointer(buffer), ctypes.POINTER(ctypes.c_byte))

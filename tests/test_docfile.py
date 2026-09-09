@@ -15,9 +15,9 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from PIL import Image  # noqa: E402
 
-from easypdf import constants as C  # noqa: E402
-from easypdf import docfile, paths  # noqa: E402
-from easypdf.htmlclean import normalise  # noqa: E402
+from tgimprint import constants as C  # noqa: E402
+from tgimprint import docfile, paths  # noqa: E402
+from tgimprint.htmlclean import normalise  # noqa: E402
 
 CHECKS = []
 
@@ -30,7 +30,7 @@ def check(label, condition, detail=""):
 
 FIXTURES = os.path.join(HERE, "tests", "fixtures")
 BODY = open(os.path.join(FIXTURES, "sample-body.html"), encoding="utf-8").read()
-WORK = tempfile.mkdtemp(prefix="easypdf docfile é ")
+WORK = tempfile.mkdtemp(prefix="tgimprint docfile é ")
 
 print("\nPictures on the way in")
 png = docfile.embed_image(os.path.join(FIXTURES, "circle.png"))
@@ -78,9 +78,9 @@ check("save returns the sanitiser's warnings", warnings == [], warnings)
 check("the file is a whole page with the meta in its head",
       text.startswith("<!DOCTYPE html>\n<html lang=\"en-US\">") and "<title>Sample document</title>" in text
       and '<meta name="author" content="Tony">' in text and '<meta name="description" content="A fixture">' in text
-      and '<meta name="generator" content="Easy PDF 1.0.0">' in text and '<meta charset="utf-8">' in text)
+      and '<meta name="generator" content="TG Imprint 1.0.0">' in text and '<meta charset="utf-8">' in text)
 check("page settings travel in the head",
-      '<meta name="easypdf-page-size" content="A4">' in text and '<meta name="easypdf-margin-inches" content="0.75">' in text)
+      '<meta name="tgimprint-page-size" content="A4">' in text and '<meta name="tgimprint-margin-inches" content="0.75">' in text)
 check("it carries a stylesheet and a body", "<style>" in text and "<body>" in text and text.rstrip().endswith("</html>"))
 check("every picture is a data URI", "src=\"data:image/png;base64," in text and "circle.png" not in text)
 body, meta_back = docfile.load(epdf)
@@ -118,10 +118,10 @@ except OSError as exc:
 finally:
     os.replace = real_replace
 check("the previous file is untouched", open(epdf, "rb").read() == before)
-check("no temp file is left beside it", not [n for n in os.listdir(WORK) if n.startswith(".easypdf-")])
+check("no temp file is left beside it", not [n for n in os.listdir(WORK) if n.startswith(".tgimprint-")])
 
 print("\nkind_of")
-check("extensions", [docfile.kind_of(n) for n in ("a.epdf", "b.HTML", "c.htm", "d.txt", "e.md", "f.markdown", "g.docx", "h.pdf")]
+check("extensions", [docfile.kind_of(n) for n in ("a.imprint", "b.HTML", "c.htm", "d.txt", "e.md", "f.markdown", "g.docx", "h.pdf")]
       == ["native", "html", "html", "text", "markdown", "markdown", "docx", "pdf"])
 unknown = os.path.join(WORK, "page.unknown")
 shutil.copy(web, unknown)
@@ -246,9 +246,9 @@ print("\nPage settings from a received file are checked on the way in")
 received = os.path.join(WORK, "received.html")
 open(received, "w", encoding="utf-8").write(
     '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>R</title>'
-    '<meta name="easypdf-font-family" content="Arial}</style><script>alert(1)</script><style>">'
-    '<meta name="easypdf-page-size" content="huge"><meta name="easypdf-margin-inches" content="1in">'
-    '<meta name="easypdf-font-points" content="12"></head><body><p>r</p></body></html>')
+    '<meta name="tgimprint-font-family" content="Arial}</style><script>alert(1)</script><style>">'
+    '<meta name="tgimprint-page-size" content="huge"><meta name="tgimprint-margin-inches" content="1in">'
+    '<meta name="tgimprint-font-points" content="12"></head><body><p>r</p></body></html>')
 _body, meta_received = docfile.load(received)
 check("a font family that could close the style element is dropped",
       "font_family" not in meta_received, meta_received.get("font_family"))
@@ -267,7 +267,7 @@ snap_folder = os.path.join(WORK, "autosave")
 os.makedirs(snap_folder)
 paths.autosave_dir = lambda: snap_folder
 try:
-    source = os.path.join(WORK, "draft.epdf")
+    source = os.path.join(WORK, "draft.imprint")
     path = docfile.snapshot("<p>unsaved <b>work</b></p>", {"title": "Draft"}, source)
     check("a snapshot is written into the autosave folder with a sidecar",
           path.startswith(snap_folder) and os.path.isfile(path) and os.path.isfile(path + ".json"))

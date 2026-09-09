@@ -1,4 +1,4 @@
-"""The Easy PDF window.
+"""The TG Imprint window.
 
 `create_frame(open_path=None)` is what main.py calls. The frame owns one
 document, one WebView2 editor (web_editor.EditorView), the menus and the
@@ -53,7 +53,7 @@ from .web_editor import EditorView, EVT_EDITOR_MESSAGE, sanitise
 
 #: docs/STRINGS.md, Worker B. Every sentence the window shows or speaks.
 S = {
-    "first_run": ("Welcome to Easy PDF. Start typing. F1 lists the keys and "
+    "first_run": ("Welcome to TG Imprint. Start typing. F1 lists the keys and "
                   "Ctrl+Shift+E makes the PDF."),
     "words": "%s words",
     "one_word": "1 word",
@@ -95,7 +95,7 @@ S = {
     "picture_pasted": "Picture pasted. It needs a description.",
     "new_document": "New document.",
     "opened": "Opened %s.",
-    "opened_from": "Opened from %s. Save will write an Easy PDF document.",
+    "opened_from": "Opened from %s. Save will write an TG Imprint document.",
     "opening": "Opening %s.",
     "open_failed": "Could not open %s. %s",
     "saved": "Saved %s.",
@@ -198,7 +198,7 @@ class MainFrame(wx.Frame):
         self.SetIcons(appicon.bundle())
 
         # The document.
-        self.path = None                 # the .epdf path once saved
+        self.path = None                 # the .imprint path once saved
         self.source_path = None          # what was opened, native or not
         self.imported_from = ""          # "Word", "Markdown"... else ""
         self.meta = self._new_meta()
@@ -446,7 +446,7 @@ class MainFrame(wx.Frame):
         updated = restarted_after_update()
         if updated:
             wx.CallLater(700, lambda: self.announce_help(S["updated_to"] % updated) if self else None)
-        threading.Thread(target=self._probe_guide, daemon=True, name="easypdf-guide").start()
+        threading.Thread(target=self._probe_guide, daemon=True, name="tgimprint-guide").start()
 
     def _probe_guide(self):
         """Is the user guide published? A HEAD request, off the UI thread."""
@@ -891,7 +891,7 @@ class MainFrame(wx.Frame):
             except Exception as exc:
                 wx.CallAfter(self._load_failed, path, exc, busy)
 
-        threading.Thread(target=work, daemon=True, name="easypdf-open").start()
+        threading.Thread(target=work, daemon=True, name="tgimprint-open").start()
 
     def _load_failed(self, path, exc, busy):
         if busy:
@@ -1000,7 +1000,7 @@ class MainFrame(wx.Frame):
                 except Exception as exc:
                     wx.CallAfter(self._save_failed, path, exc, done)
 
-            threading.Thread(target=work, daemon=True, name="easypdf-save").start()
+            threading.Thread(target=work, daemon=True, name="tgimprint-save").start()
 
         self.editor.get_body(got)
 
@@ -1088,7 +1088,7 @@ class MainFrame(wx.Frame):
                 except Exception as exc:
                     wx.CallAfter(finished, out, None, "", exc, busy)
 
-            threading.Thread(target=work, daemon=True, name="easypdf-export").start()
+            threading.Thread(target=work, daemon=True, name="tgimprint-export").start()
 
         self.editor.get_body(got)
 
@@ -1142,7 +1142,7 @@ class MainFrame(wx.Frame):
         self._ensure_title(self._print_after_title)
 
     def _print_after_title(self):
-        out = os.path.join(tempfile.mkdtemp(prefix="easypdf-print-"),
+        out = os.path.join(tempfile.mkdtemp(prefix="tgimprint-print-"),
                            safe_filename(self.meta.get("title") or "document") + ".pdf")
         self._export_to(out, self._print_finished)
 
@@ -1182,7 +1182,7 @@ class MainFrame(wx.Frame):
             except Exception as exc:
                 wx.CallAfter(self._checked, name, "", exc)
 
-        threading.Thread(target=work, daemon=True, name="easypdf-check").start()
+        threading.Thread(target=work, daemon=True, name="tgimprint-check").start()
 
     def _checked(self, name, text, error):
         if error is not None:
@@ -1565,7 +1565,7 @@ class MainFrame(wx.Frame):
             if available and info:
                 wx.CallAfter(self._offer_update, info)
 
-        threading.Thread(target=work, daemon=True, name="easypdf-update").start()
+        threading.Thread(target=work, daemon=True, name="tgimprint-update").start()
 
     def on_check_updates(self, _event=None):
         self.announce_help(S["checking_updates"])
@@ -1578,7 +1578,7 @@ class MainFrame(wx.Frame):
                 available, info, message = False, None, "Could not check. %s" % exc
             wx.CallAfter(self._update_check_done, available, info, message)
 
-        threading.Thread(target=work, daemon=True, name="easypdf-update").start()
+        threading.Thread(target=work, daemon=True, name="tgimprint-update").start()
 
     def _update_check_done(self, available, info, message):
         if not self:
@@ -1623,7 +1623,7 @@ class MainFrame(wx.Frame):
                 raise appupdate.Stopped()
             box.step(done, total)
 
-        threading.Thread(target=work, daemon=True, name="easypdf-dl").start()
+        threading.Thread(target=work, daemon=True, name="tgimprint-dl").start()
 
     def _download_done(self, token, message):
         """Velopack has the package. Apply it and restart, after the flush.
@@ -1724,7 +1724,7 @@ class MainFrame(wx.Frame):
                 return
             wx.CallAfter(self._snapshot_written, where)
 
-        threading.Thread(target=work, daemon=True, name="easypdf-autosave").start()
+        threading.Thread(target=work, daemon=True, name="tgimprint-autosave").start()
 
     def _snapshot_written(self, where):
         if not self:
@@ -1856,7 +1856,7 @@ def kind_of(path):
         return docfile.kind_of(path)
     except ImportError:
         ext = os.path.splitext(path)[1].lower()
-        return {".epdf": "native", ".html": "html", ".htm": "html", ".txt": "text",
+        return {".imprint": "native", ".html": "html", ".htm": "html", ".txt": "text",
                 ".md": "markdown", ".markdown": "markdown", ".docx": "docx",
                 ".pdf": "pdf"}.get(ext, "html")
 
@@ -1922,7 +1922,7 @@ def write_document(path, body, meta):
                C.APP_NAME, C.APP_VERSION))
     data = head + body + "\n</body>\n</html>\n"
     folder = os.path.dirname(path) or "."
-    fd, temp = tempfile.mkstemp(prefix=".easypdf-", suffix=".tmp", dir=folder)
+    fd, temp = tempfile.mkstemp(prefix=".tgimprint-", suffix=".tmp", dir=folder)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(data)
     os.replace(temp, path)

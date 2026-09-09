@@ -1,4 +1,4 @@
-"""Easy PDF: accessible documents and tagged PDFs. A TG Studios program.
+"""TG Imprint: accessible documents and tagged PDFs. A TG Studios program.
 
     python main.py                       open a blank document
     python main.py <file>                open that file (epdf, html, txt, md, docx, pdf)
@@ -54,7 +54,7 @@ def _set_taskbar_identity():
     the window icon was.
     """
     try:
-        from easypdf import constants
+        from tgimprint import constants
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
             constants.APP_USER_MODEL_ID)
     except Exception:
@@ -71,7 +71,7 @@ def _velopack_first():
     the hook was called and nothing after run() ran). So this is the first
     thing main.py does, before DPI awareness and before wx is imported.
 
-    The hooks are how the .epdf document type gets registered: Velopack
+    The hooks are how the .imprint document type gets registered: Velopack
     installs the program and knows nothing about file types. After a normal
     start run() returns, having set the first-run and restarted flags the
     window reads. From source, or from a plain unpacked folder, Velopack
@@ -82,7 +82,7 @@ def _velopack_first():
         import velopack
     except Exception:
         return
-    from easypdf import appupdate, filetype
+    from tgimprint import appupdate, filetype
 
     def register(*_args):
         filetype.register()
@@ -117,8 +117,8 @@ if sys.platform == "win32":
 
 import wx  # noqa: E402
 
-from easypdf import constants as C                    # noqa: E402
-from easypdf.singleinstance import SingleInstance     # noqa: E402
+from tgimprint import constants as C                    # noqa: E402
+from tgimprint.singleinstance import SingleInstance     # noqa: E402
 
 
 def file_argument(argv):
@@ -141,12 +141,12 @@ def build_main_window(open_path=None):
     The UI package exports `create_frame(open_path)`; until it does, the
     April prototype's MainWindow is used so the scaffold runs on day one.
     """
-    from easypdf.ui import main_window
+    from tgimprint.ui import main_window
     factory = getattr(main_window, "create_frame", None)
     if factory is not None:
         return factory(open_path)
     frame = main_window.MainWindow(None, use_web_editor=True)
-    from easypdf import appicon
+    from tgimprint import appicon
     frame.SetIcons(appicon.bundle())
     if open_path and hasattr(frame, "_load_file"):
         frame._load_file(open_path)
@@ -174,7 +174,7 @@ def selftest():  # noqa: C901
     # module means no update ever, and no cryptography means every manifest
     # is refused as unsigned. Prove both.
     try:
-        from easypdf import appupdate
+        from tgimprint import appupdate
         if "REPLACE" in appupdate.PUBLIC_KEY_B64:
             problems.append("no app-update key baked into this build")
         else:
@@ -202,7 +202,7 @@ def selftest():  # noqa: C901
 
     # ---- speech --------------------------------------------------------------
     try:
-        from easypdf import speech
+        from tgimprint import speech
         notes.append("speech: %s" % ("available" if speech.Speaker().available
                                      else "not available (app still runs)"))
     except Exception as exc:
@@ -254,7 +254,7 @@ def selftest():  # noqa: C901
     # here rather than on their desk.
     engine_ok = False
     try:
-        from easypdf import pdfengine
+        from tgimprint import pdfengine
         ok, detail = pdfengine.available()
         engine_ok = bool(ok)
         (notes if ok else problems).append("pdf engine: %s" % detail)
@@ -267,7 +267,7 @@ def selftest():  # noqa: C901
             for engine in engines:
                 name = getattr(engine, "name", None) or str(engine)
                 path = getattr(engine, "path", None) or ""
-                target = os.path.join(tempfile.mkdtemp(prefix="easypdf-engine-"),
+                target = os.path.join(tempfile.mkdtemp(prefix="tgimprint-engine-"),
                                       "probe.pdf")
                 try:
                     if hasattr(pdfengine, "render_with"):
@@ -290,13 +290,13 @@ def selftest():  # noqa: C901
 
     if engine_ok:
         try:
-            from easypdf import pdfexport
-            out = os.path.join(tempfile.mkdtemp(prefix="easypdf-selftest-"),
+            from tgimprint import pdfexport
+            out = os.path.join(tempfile.mkdtemp(prefix="tgimprint-selftest-"),
                                "selftest.pdf")
             body = ("<h1>Selftest</h1><p>A paragraph with <strong>bold</strong> "
                     "and <a href=\"https://tgstudios.app\">a link</a>.</p>"
                     "<ul><li>One</li><li>Two</li></ul>")
-            meta = {"title": "Easy PDF selftest", "author": C.VENDOR,
+            meta = {"title": "TG Imprint selftest", "author": C.VENDOR,
                     "lang": "en-US", "subject": ""}
             result = pdfexport.export_html(body, out, meta)
             import pikepdf as _pk
@@ -333,7 +333,7 @@ def selftest():  # noqa: C901
             else:
                 notes.append("export: Producer %s" % producer)
             try:
-                from easypdf import pdfcheck
+                from tgimprint import pdfcheck
                 report = pdfcheck.check(out)
                 ok_count, total = report.score
                 if not report.passed:
@@ -355,7 +355,7 @@ def selftest():  # noqa: C901
     # raw. Only sanitised HTML may enter the page, so the sanitiser is proved
     # here with the two shapes that matter.
     try:
-        from easypdf import htmlclean
+        from tgimprint import htmlclean
         hostile = ('<p>x</p><img src="nope" onerror="alert(1)" alt="">'
                    '<a href="javascript:alert(2)">link</a><script>alert(3)</script>')
         cleaned = htmlclean.normalise(hostile)
@@ -386,7 +386,7 @@ def selftest():  # noqa: C901
                             "the editor cannot load. Is the WebView2 runtime "
                             "installed, and is WebView2Loader.dll in the build?")
         else:
-            probe = wx.Frame(None, title="Easy PDF selftest probe")
+            probe = wx.Frame(None, title="TG Imprint selftest probe")
             view = webview.WebView.New(probe, backend=webview.WebViewBackendEdge)
             outcome = {}
 
@@ -464,7 +464,7 @@ def selftest():  # noqa: C901
         if arg == "--selftest-out" and i + 1 < len(sys.argv):
             out = sys.argv[i + 1]
     if out is None:
-        out = os.path.join(tempfile.gettempdir(), "easypdf-selftest.txt")
+        out = os.path.join(tempfile.gettempdir(), "tgimprint-selftest.txt")
     try:
         with open(out, "w", encoding="utf-8") as fh:
             fh.write(text + "\n")
@@ -487,7 +487,7 @@ def webview_missing():
             return "The Microsoft Edge WebView2 runtime is not installed."
     except Exception as exc:
         return "The editor component could not be loaded. %s" % exc
-    from easypdf import paths
+    from tgimprint import paths
     if paths.is_frozen():
         beside = os.path.join(paths.resource("wx"), "WebView2Loader.dll")
         if not os.path.exists(beside):
@@ -551,7 +551,7 @@ class EasyPdfApp(wx.App):
         # And the one a second launch hands a document to. The window
         # exposes open_document(path); until it does, the path is dropped
         # after the window is raised, which is what the April build did.
-        from easypdf import handoff
+        from tgimprint import handoff
         opener = getattr(frame, "open_document", None)
         if opener is not None:
             # Deferred, not called inside the message. open_document may
@@ -594,7 +594,7 @@ def main():
         # A second launch with a document hands the document over first,
         # then raises the window. Raising alone would throw the path away.
         if open_path:
-            from easypdf import handoff
+            from tgimprint import handoff
             handoff.hand_over(instance, open_path)
         if instance.raise_existing():
             return 0
@@ -603,15 +603,15 @@ def main():
             % C.APP_NAME, C.APP_NAME, wx.OK | wx.ICON_INFORMATION)
         return 0
 
-    from easypdf import paths
+    from tgimprint import paths
     # The document type, on every start of an installed copy. Velopack's
     # after-install hook does this too, but a hook that fails leaves no
-    # trace and a user with a .epdf file that opens nothing (measured on
+    # trace and a user with a .imprint file that opens nothing (measured on
     # the 1.0.0 install, 2026-09-09). Registering here as well is cheap,
     # idempotent, and the one path that certainly runs.
     if paths.is_frozen():
         try:
-            from easypdf import appupdate as _au, filetype as _ft
+            from tgimprint import appupdate as _au, filetype as _ft
             if _au.is_installed() and not _ft.registered():
                 _ft.register()
         except Exception:

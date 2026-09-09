@@ -26,7 +26,7 @@ from docx.oxml import OxmlElement  # noqa: E402
 from docx.oxml.ns import qn  # noqa: E402
 from docx.shared import Inches  # noqa: E402
 
-from easypdf import docfile, docx_in, markdown_in, pdfexport, pdfimport  # noqa: E402
+from tgimprint import docfile, docx_in, markdown_in, pdfexport, pdfimport  # noqa: E402
 
 CHECKS = []
 
@@ -42,7 +42,7 @@ def check(label, condition, detail=""):
 
 
 FIXTURES = os.path.join(HERE, "tests", "fixtures")
-WORK = tempfile.mkdtemp(prefix="easypdf import é ")
+WORK = tempfile.mkdtemp(prefix="tgimprint import é ")
 DATA = "data:image/png;base64,"
 
 

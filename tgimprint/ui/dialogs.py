@@ -45,7 +45,7 @@ def name_field(control, name):
             target = child
             break
     accessible = _Named(name)
-    control._easypdf_accessible = accessible
+    control._tgimprint_accessible = accessible
     target.SetAccessible(accessible)
     return control
 

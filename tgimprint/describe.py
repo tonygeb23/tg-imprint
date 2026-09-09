@@ -135,7 +135,7 @@ def _policy_sentence(provider):
     who = _SHORT_NAMES.get(provider, provider)
     return ("Before sending anything private, check what %s says it does "
             "with what it receives; the address of its data policy is in "
-            "Easy PDF's guide, DESCRIBER.md, and it is %s"
+            "TG Imprint's guide, DESCRIBER.md, and it is %s"
             % (who, POLICY_URLS.get(provider, "on the provider's own site")))
 
 
@@ -188,7 +188,7 @@ def consent_question(kind, provider, pictures, words, kilobytes, imported,
     if imported:
         return ("This sends one picture to %s, over the internet, %s, so "
                 "it can be described for you. The picture came in with a "
-                "document that was imported, so Easy PDF asks every time "
+                "document that was imported, so TG Imprint asks every time "
                 "before any of it leaves this machine. The description "
                 "comes back for you to read and change before anything "
                 "goes into your document. %s. Send the picture?"
@@ -197,7 +197,7 @@ def consent_question(kind, provider, pictures, words, kilobytes, imported,
             "can be described for you. The description comes back for you "
             "to read and change before anything goes into your document. "
             "You will not be asked again for pictures from your own files "
-            "until Easy PDF is next opened. %s. Send the picture?"
+            "until TG Imprint is next opened. %s. Send the picture?"
             % (who, size, _policy_sentence(provider)))
 
 
@@ -665,7 +665,7 @@ def describe_image(image_bytes, provider, model, context="", long=False):
     if prepared is None:
         return False, ("The picture could not be prepared for sending, so "
                        "nothing has left this machine. It may be a kind of "
-                       "picture file Easy PDF cannot read.")
+                       "picture file TG Imprint cannot read.")
     ok, text = ai.ask([prepared], alt_prompt(context, long), provider, key,
                       model, timeout=ai.TIMEOUT, max_tokens=ai.IMAGE_TOKENS)
     if not ok:
@@ -753,7 +753,7 @@ def describe_document(body_html, images, provider, model, progress=None):
 def copy_drop_deck_key(provider, source_prefix=DROP_DECK_PREFIX,
                        target_prefix=None):
     """Read the key TG Drop Deck keeps for this provider and keep a copy
-    under Easy PDF's own name. Nothing is sent anywhere. Returns
+    under TG Imprint's own name. Nothing is sent anywhere. Returns
     `(ok, sentence)`; the sentence never contains the key."""
     provider = (provider or "").strip().lower()
     who = ai.PROVIDER_NAMES.get(provider, provider)
@@ -772,7 +772,7 @@ def copy_drop_deck_key(provider, source_prefix=DROP_DECK_PREFIX,
         kept = False
     if not kept:
         return False, ("The %s key was found, but Windows Credential "
-                       "Manager would not keep a copy for Easy PDF. Paste "
+                       "Manager would not keep a copy for TG Imprint. Paste "
                        "the key into the box instead." % who)
-    return True, ("The %s key from TG Drop Deck is now kept for Easy PDF as "
+    return True, ("The %s key from TG Drop Deck is now kept for TG Imprint as "
                   "well, %s." % (who, secrets.redact(found)))

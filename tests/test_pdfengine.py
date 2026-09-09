@@ -22,7 +22,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import fitz  # noqa: E402
 import pikepdf  # noqa: E402
 
-from easypdf import pdfengine  # noqa: E402
+from tgimprint import pdfengine  # noqa: E402
 
 CHECKS = []
 
@@ -37,7 +37,7 @@ FIXTURE = os.path.join(HERE, "tests", "fixtures", "sample-body.html")
 BODY = open(FIXTURE, encoding="utf-8").read()
 PAGE = ('<!DOCTYPE html><html lang="en-US"><head><meta charset="utf-8">'
         "<title>Sample document</title></head><body>" + BODY + "</body></html>")
-WORK = tempfile.mkdtemp(prefix="easypdf engine é ")
+WORK = tempfile.mkdtemp(prefix="tgimprint engine é ")
 
 
 def tree_kinds(path):
@@ -128,11 +128,11 @@ if found:
     elapsed = time.perf_counter() - started
     check("half a second is not enough to render, so it timed out", timed_out)
     check("the profile folder was released and removed straight away (under 4 seconds)",
-          elapsed < 4.0 and not [n for n in os.listdir(tempfile.gettempdir()) if n.startswith("easypdf-render-")],
+          elapsed < 4.0 and not [n for n in os.listdir(tempfile.gettempdir()) if n.startswith("tgimprint-render-")],
           "%.2f seconds" % elapsed)
     if os.name == "nt":
         script = ("(Get-CimInstance Win32_Process -Filter \"name='msedge.exe' or name='chrome.exe'\" "
-                  "| Where-Object { $_.CommandLine -like '*easypdf-render-*' } | Measure-Object).Count")
+                  "| Where-Object { $_.CommandLine -like '*tgimprint-render-*' } | Measure-Object).Count")
         proc = subprocess.run(["powershell", "-NoProfile", "-Command", script],
                               capture_output=True, text=True, timeout=90)
         count = proc.stdout.strip()
@@ -164,7 +164,7 @@ try:
               str(exc) == pdfengine.MSG_NO_ENGINE)
 finally:
     pdfengine.engines = real_engines
-leftovers = [n for n in os.listdir(tempfile.gettempdir()) if n.startswith("easypdf-render-")]
+leftovers = [n for n in os.listdir(tempfile.gettempdir()) if n.startswith("tgimprint-render-")]
 check("no render folder is left behind", not leftovers, leftovers)
 
 shutil.rmtree(WORK, ignore_errors=True)

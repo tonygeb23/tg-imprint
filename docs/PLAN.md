@@ -1,5 +1,13 @@
 # Easy PDF revival, the plan and the committee (2026-09-09)
 
+> **Renamed 2026-09-09.** Tony chose **TG Imprint**. Every path below that
+> reads `easypdf/` is now `tgimprint/`, the document extension is
+> `.imprint`, and the frozen names are `TGImprint`, `tg-imprint` and
+> `TGStudios.TGImprint`. The old name is left in this document because it
+> is the record of how the decision was reached.
+
+
+
 Read `ANALYSIS.md` first. This file says who does what, in what order, and
 what "done" means. It is the brief every agent works from.
 

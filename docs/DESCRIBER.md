@@ -1,6 +1,6 @@
 # The describer: pictures and documents described on your own key
 
-Easy PDF can ask a model that can see to describe a picture, so its
+TG Imprint can ask a model that can see to describe a picture, so its
 alternative text can be written, and to describe a whole document, so a
 blind reader knows what they have been sent. It does this with Claude,
 from Anthropic; ChatGPT, from OpenAI; or Gemini, from Google, on a key
@@ -41,18 +41,18 @@ often, follows where the picture came from (docs/DECISIONS.md, decision
 
 | What | What is sent | Asks |
 |---|---|---|
-| A picture you put in from your own disk | The picture, scaled to at most 1,600 pixels wide, and the question below | Once per session. The yes is kept in memory until Easy PDF is closed, and written nowhere |
+| A picture you put in from your own disk | The picture, scaled to at most 1,600 pixels wide, and the question below | Once per session. The yes is kept in memory until TG Imprint is closed, and written nowhere |
 | A picture that came in with an imported document (a PDF, a Word file, a web page somebody sent you) | The same | Every time. That is somebody else's document leaving the machine, and you cannot look at the picture to check what is in it |
 | Several pictures at once | Each picture, scaled | Every time |
 | The whole document | Its text with the structure marked (headings with their levels, each paragraph, each list item, each link with its address, each table row, each picture with the description it already has), plus up to twelve pictures, scaled | Every time. The question says how many words, how many pictures and how many kilobytes |
-| The Test button on the AI page of Preferences | One 96 by 64 pixel picture Easy PDF draws itself, a red circle on white, about a kilobyte, and a one-line question. Nothing of yours | It says what it sends on the page; no separate question |
+| The Test button on the AI page of Preferences | One 96 by 64 pixel picture TG Imprint draws itself, a red circle on white, about a kilobyte, and a one-line question. Nothing of yours | It says what it sends on the page; no separate question |
 | The Get the list button | Only your key, to the provider's own list of models | No question; nothing of yours leaves |
 
 What never leaves: the document's file name (the consent question names
 it for you, but it is not sent), your key to anybody but the company
 that issued it (it travels in a request header, never in an address), and
 anything at all to TG Studios. The key is kept in Windows Credential
-Manager under the name **Easy PDF AI key**, never in a document and never
+Manager under the name **TG Imprint AI key**, never in a document and never
 in your settings file, so a file you send to somebody else does not carry
 it. You can see it and remove it in Credential Manager yourself.
 
@@ -260,7 +260,7 @@ freezes.
 
 ## The words that are asked in your name
 
-These are the prompts, in full, as `easypdf/describe.py` sends them.
+These are the prompts, in full, as `tgimprint/describe.py` sends them.
 They are also listed in `docs/STRINGS.md`.
 
 ### One picture, one or two sentences
@@ -392,7 +392,7 @@ describe a picture says so, and that nothing is wrong with the key.
 
 ## For whoever maintains this
 
-- `easypdf/ai.py` is TG Drop Deck's `vision.py` with the camera and
+- `tgimprint/ai.py` is TG Drop Deck's `vision.py` with the camera and
   screen material removed. The transport, the three single-picture
   builders, `_trouble`, `list_models`, `providers_with_keys` and
   `best_provider` keep their shape so a fix in Drop Deck can be pasted
@@ -408,7 +408,7 @@ describe a picture says so, and that nothing is wrong with the key.
   answer. The OpenAI builder sends `max_completion_tokens`, which every
   current OpenAI model takes, where `max_tokens` is refused by the
   reasoning models a user can type into the box.
-- `easypdf/describe.py` holds the prompts, the consent rules, the
+- `tgimprint/describe.py` holds the prompts, the consent rules, the
   outline, the picture cap and the two public calls. `describe_image`
   and `describe_document` read the key themselves through `key_for`, so
   a dialog never handles one; a test stands in a key by replacing

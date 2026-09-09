@@ -40,7 +40,7 @@ MAX_FORM_DEPTH = 6
 #: size) is a word space; the text is only used to name things.
 SPACE_ADJUSTMENT = -180
 
-CLOSING = ("These are the checks Easy PDF can make from here. A full PDF/UA verdict "
+CLOSING = ("These are the checks TG Imprint can make from here. A full PDF/UA verdict "
            "needs PAC or veraPDF.")
 
 
@@ -867,7 +867,7 @@ def _font_embedded(font):
 def identifier_check(part):
     return CheckResult("PDF/UA identifier", part == "1",
                        "The file identifies itself as PDF/UA-1." if part == "1" else
-                       "No PDF/UA identifier. Easy PDF writes one only when every other "
+                       "No PDF/UA identifier. TG Imprint writes one only when every other "
                        "check passes.",
                        key="identifier")
 
@@ -931,7 +931,7 @@ def _run_checks(pdf, report):
     add(CheckResult("Tagged PDF", marked,
                     "The file says it is tagged." if marked else
                     "The file does not say it is tagged (no MarkInfo). A screen reader "
-                    "gets no structure from it. Export it again from Easy PDF.",
+                    "gets no structure from it. Export it again from TG Imprint.",
                     key="tagged"))
 
     # 2. Structure tree
@@ -940,7 +940,7 @@ def _run_checks(pdf, report):
     add(CheckResult("Structure tree", has_tree,
                     ("The tree holds %s." % _n(len(elements), "element", "elements")) if has_tree else
                     "There is no structure tree, so headings, lists, links and pictures "
-                    "have no roles. Export it again from Easy PDF.",
+                    "have no roles. Export it again from TG Imprint.",
                     key="tree"))
 
     # 3. Language
@@ -970,7 +970,7 @@ def _run_checks(pdf, report):
     add(CheckResult("Title shown in the window", display,
                     "Viewers show the document title rather than the file name." if display else
                     "Viewers will show the file name instead of the title (DisplayDocTitle "
-                    "is off). Export it again from Easy PDF.",
+                    "is off). Export it again from TG Imprint.",
                     key="display_title"))
 
     # 5. Title. Info is read before the XMP is opened, on purpose.
@@ -985,7 +985,7 @@ def _run_checks(pdf, report):
     elif info_title:
         add(CheckResult("Title", False,
                         "The title \"%s\" is in the file's information but not in its "
-                        "XMP metadata, which PDF/UA requires. Export it again from Easy PDF."
+                        "XMP metadata, which PDF/UA requires. Export it again from TG Imprint."
                         % _short(info_title, 60), key="title"))
     else:
         add(CheckResult("Title", False,
@@ -1066,7 +1066,7 @@ def _run_checks(pdf, report):
     elif not_embedded:
         add(CheckResult("Fonts embedded", False,
                         "%s not embedded: %s. Every reader needs the fonts inside the file. "
-                        "Export it again from Easy PDF."
+                        "Export it again from TG Imprint."
                         % (_n(len(not_embedded), "font is", "fonts are"), ", ".join(not_embedded[:6])),
                         key="fonts"))
     else:
@@ -1107,7 +1107,7 @@ def _run_checks(pdf, report):
     elif pages_without_tabs:
         add(CheckResult("Tab order", False,
                         "%s with links or fields %s no tab order set. Export it again from "
-                        "Easy PDF." % (_n(pages_without_tabs, "page", "pages"),
+                        "TG Imprint." % (_n(pages_without_tabs, "page", "pages"),
                                        "has" if pages_without_tabs == 1 else "have"),
                         key="tabs"))
     else:
@@ -1118,7 +1118,7 @@ def _run_checks(pdf, report):
     elif links_without_parent:
         add(CheckResult("Links tagged", False,
                         "%s of %d %s not in the structure tree, so a screen reader cannot "
-                        "reach %s. Export it again from Easy PDF."
+                        "reach %s. Export it again from TG Imprint."
                         % (links_without_parent, links,
                            "link is" if links_without_parent == 1 else "links are",
                            "it" if links_without_parent == 1 else "them"),
@@ -1131,7 +1131,7 @@ def _run_checks(pdf, report):
         if links_without_contents:
             add(CheckResult("Links described", False,
                             "%s of %d %s no description, so some screen readers read only "
-                            "the address. Easy PDF writes the link text as the description "
+                            "the address. TG Imprint writes the link text as the description "
                             "when it exports."
                             % (links_without_contents, links,
                                "link has" if links_without_contents == 1 else "links have"),
@@ -1150,7 +1150,7 @@ def _run_checks(pdf, report):
     add(CheckResult("Bookmarks", has_outline,
                     "The headings are bookmarks." if has_outline else
                     "There are no bookmarks. Readers of a long document jump by them; "
-                    "Easy PDF makes one per heading.",
+                    "TG Imprint makes one per heading.",
                     warn_only=True, key="outline"))
 
     # 13. Text layer and 14. untagged text
@@ -1168,7 +1168,7 @@ def _run_checks(pdf, report):
     elif images:
         add(CheckResult("Text layer", False,
                         "This PDF is pictures of text. There is no text for a screen reader "
-                        "to read, and Easy PDF has no text recognition in this release. "
+                        "to read, and TG Imprint has no text recognition in this release. "
                         "Run OCR in another program first.", key="text"))
     else:
         add(CheckResult("Text layer", False,
@@ -1177,7 +1177,7 @@ def _run_checks(pdf, report):
         add(CheckResult("All text tagged", untagged == 0,
                         "Every piece of text is inside tagged content." if untagged == 0 else
                         "%s of text %s outside any tag, where a screen reader may skip "
-                        "%s. Export it again from Easy PDF."
+                        "%s. Export it again from TG Imprint."
                         % (_n(untagged, "character", "characters"),
                            "is" if untagged == 1 else "are", "it" if untagged == 1 else "them"),
                         key="untagged"))

@@ -62,9 +62,9 @@ _END_RE = re.compile(r"[.!?:;\"”’)\]]\s*$")
 MSG_PASSWORD = "This PDF is protected by a password, so it cannot be opened."
 MSG_NOT_PDF = "That file is not a PDF."
 MSG_CANNOT_OPEN = "The PDF could not be opened. %s"
-MSG_SCANNED = ("This PDF is pictures of text. Nothing could be read from it, and Easy PDF "
+MSG_SCANNED = ("This PDF is pictures of text. Nothing could be read from it, and TG Imprint "
                "has no text recognition in this release. Run OCR in another program first.")
-MSG_SOME_SCANNED = ("%s no text and may be pictures of text. Easy PDF has no text "
+MSG_SOME_SCANNED = ("%s no text and may be pictures of text. TG Imprint has no text "
                     "recognition in this release.")
 MSG_TAGGED = ("This PDF is tagged. Its headings and lists are re-created here from the "
               "text layout, not from its tags, so check them.")

@@ -27,34 +27,34 @@ def check(label, condition, detail=""):
 
 print("\nThe frozen block never changes")
 
-from easypdf import constants as C   # noqa: E402
+from tgimprint import constants as C   # noqa: E402
 
-check("the instance slug is EasyPDF", C.INSTANCE_SLUG == "EasyPDF", C.INSTANCE_SLUG)
-check("the feed slug is easy-pdf", C.FEED_SLUG == "easy-pdf", C.FEED_SLUG)
-check("the taskbar identity is TGStudios.EasyPDF.1",
-      C.APP_USER_MODEL_ID == "TGStudios.EasyPDF.1", C.APP_USER_MODEL_ID)
-check("the installer is named EasyPDF-<version>-Setup.exe",
-      C.INSTALLER_BASENAME == "EasyPDF", C.INSTALLER_BASENAME)
-check("the zip is named Easy-PDF-<version>-windows.zip",
-      C.ZIP_BASENAME == "Easy-PDF", C.ZIP_BASENAME)
+check("the instance slug is TGImprint", C.INSTANCE_SLUG == "TGImprint", C.INSTANCE_SLUG)
+check("the feed slug is tg-imprint", C.FEED_SLUG == "tg-imprint", C.FEED_SLUG)
+check("the taskbar identity is TGStudios.TGImprint.1",
+      C.APP_USER_MODEL_ID == "TGStudios.TGImprint.1", C.APP_USER_MODEL_ID)
+check("the installer is named TGImprint-<version>-Setup.exe",
+      C.INSTALLER_BASENAME == "TGImprint", C.INSTALLER_BASENAME)
+check("the zip is named TG-Imprint-<version>-windows.zip",
+      C.ZIP_BASENAME == "TG-Imprint", C.ZIP_BASENAME)
 check("the version has three parts",
       len(C.APP_VERSION.split(".")) == 3 and all(p.isdigit() for p in C.APP_VERSION.split(".")),
       C.APP_VERSION)
-check("the document ProgId is frozen", C.DOC_PROGID == "TGStudios.EasyPDF.Document", C.DOC_PROGID)
+check("the document ProgId is frozen", C.DOC_PROGID == "TGStudios.TGImprint.Document", C.DOC_PROGID)
 check("the settings folder name is frozen, apart from the display name",
-      C.CONFIG_FOLDER_NAME == "Easy PDF", C.CONFIG_FOLDER_NAME)
+      C.CONFIG_FOLDER_NAME == "TG Imprint", C.CONFIG_FOLDER_NAME)
 
 print("\nThe file types")
-check("the native document is .epdf", C.DOC_EXTENSION == ".epdf")
-check("Open takes .epdf and .docx", ".epdf" in C.IMPORT_EXTENSIONS and ".docx" in C.IMPORT_EXTENSIONS)
+check("the native document is .imprint", C.DOC_EXTENSION == ".imprint")
+check("Open takes .imprint and .docx", ".imprint" in C.IMPORT_EXTENSIONS and ".docx" in C.IMPORT_EXTENSIONS)
 check("and not .rtf, which is out of 1.0.0", ".rtf" not in C.IMPORT_EXTENSIONS)
 check("pictures are downscaled to 2000 pixels", C.IMAGE_MAX_EDGE == 2000 and 50 <= C.IMAGE_JPEG_QUALITY <= 95)
 
-check("the Velopack package id is frozen", C.PACK_ID == "TGStudios.EasyPDF", C.PACK_ID)
+check("the Velopack package id is frozen", C.PACK_ID == "TGStudios.TGImprint", C.PACK_ID)
 check("the Velopack feed lives under the site's downloads by the feed slug",
-      C.RELEASES_URL == "https://tgstudios.app/downloads/easy-pdf/", C.RELEASES_URL)
+      C.RELEASES_URL == "https://tgstudios.app/downloads/tg-imprint/", C.RELEASES_URL)
 check("Inno Setup is gone: Velopack builds the installer",
-      not os.path.exists(os.path.join(HERE, "tools", "easypdf.iss")))
+      not os.path.exists(os.path.join(HERE, "tools", "tgimprint.iss")))
 build_tool = open(os.path.join(HERE, "tools", "build_release.py"), encoding="utf-8").read()
 check("the build tool packs with vpk under the frozen package id",
       '"pack"' in build_tool and "C.PACK_ID" in build_tool and "--mainExe" in build_tool)
@@ -70,14 +70,14 @@ check("and the hooks register and remove the document type",
 
 print("\nThe update client")
 
-from easypdf import appupdate   # noqa: E402
+from tgimprint import appupdate   # noqa: E402
 
 check("the signed manifest URL agrees with the feed slug",
       appupdate.MANIFEST_URL == "https://tgstudios.app/updates/%s-app.json" % C.FEED_SLUG,
       appupdate.MANIFEST_URL)
-update_src = open(os.path.join(HERE, "easypdf", "appupdate.py"), encoding="utf-8").read()
+update_src = open(os.path.join(HERE, "tgimprint", "appupdate.py"), encoding="utf-8").read()
 check("and is a literal the TG Studios update checker can read out of the source",
-      'MANIFEST_URL = "https://tgstudios.app/updates/easy-pdf-app.json"' in update_src)
+      'MANIFEST_URL = "https://tgstudios.app/updates/tg-imprint-app.json"' in update_src)
 check("the Velopack feed URL is the constant", appupdate.RELEASES_URL == C.RELEASES_URL)
 check("the public key is baked in", "REPLACE" not in appupdate.PUBLIC_KEY_B64
       and len(appupdate.PUBLIC_KEY_B64) > 40)
@@ -100,7 +100,7 @@ print("\nShared modules stay byte-identical to the proven copies")
 DROP_DECK = os.path.join(os.path.dirname(HERE), "TG Drop Deck", "dropdeck")
 if os.path.isdir(DROP_DECK):
     for name in ("singleinstance.py", "updatedialog.py", "speech.py"):
-        mine = open(os.path.join(HERE, "easypdf", name), "rb").read()
+        mine = open(os.path.join(HERE, "tgimprint", name), "rb").read()
         theirs = open(os.path.join(DROP_DECK, name), "rb").read()
         check("%s is byte-identical to Drop Deck's" % name, mine == theirs)
     theirs = open(os.path.join(DROP_DECK, "appupdate.py"), encoding="utf-8").read()
@@ -114,10 +114,10 @@ else:
 
 print("\nSecrets live in Credential Manager under this app's own name")
 
-from easypdf import secrets   # noqa: E402
+from tgimprint import secrets   # noqa: E402
 
-check("the credential prefix names Easy PDF",
-      secrets.TARGET_PREFIX.startswith("Easy PDF"), secrets.TARGET_PREFIX)
+check("the credential prefix names TG Imprint",
+      secrets.TARGET_PREFIX.startswith("TG Imprint"), secrets.TARGET_PREFIX)
 check("the AI prefix is the same store",
       secrets.VISION_PREFIX == secrets.TARGET_PREFIX)
 if secrets.available():
@@ -133,7 +133,7 @@ else:
 
 print("\nPaths")
 
-from easypdf import paths   # noqa: E402
+from tgimprint import paths   # noqa: E402
 
 cfg = paths.config_dir()
 check("the config folder is under AppData in a TG Studios folder",
@@ -168,7 +168,7 @@ print("\nThe icon")
 
 import wx   # noqa: E402
 app = wx.App(False)
-from easypdf import appicon   # noqa: E402
+from tgimprint import appicon   # noqa: E402
 
 for size in (16, 32, 256):
     bmp = appicon.bitmap(size)
@@ -192,7 +192,7 @@ check("the default is everything", C.DEFAULT_SPEECH_LEVEL == C.SPEECH_ALL)
 print("\nmain.py")
 
 import importlib.util   # noqa: E402
-spec = importlib.util.spec_from_file_location("easypdf_main", os.path.join(HERE, "main.py"))
+spec = importlib.util.spec_from_file_location("tgimprint_main", os.path.join(HERE, "main.py"))
 main_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(main_module)
 check("a file on the command line is found", main_module.file_argument(

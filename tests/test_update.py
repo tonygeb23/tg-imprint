@@ -23,9 +23,9 @@ from cryptography.hazmat.primitives import serialization   # noqa: E402
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey   # noqa: E402
 import velopack   # noqa: E402
 
-from easypdf import appupdate   # noqa: E402
-from easypdf import constants as C   # noqa: E402
-from easypdf import paths   # noqa: E402
+from tgimprint import appupdate   # noqa: E402
+from tgimprint import constants as C   # noqa: E402
+from tgimprint import paths   # noqa: E402
 
 CHECKS = []
 
@@ -46,7 +46,7 @@ appupdate.PUBLIC_KEY_B64 = public_b64
 
 PACKAGE_SHA = "ab" * 32
 MANIFEST = {"product": C.APP_NAME, "version": "9.9.9",
-            "url": "https://example.invalid/EasyPDF-9.9.9-Setup.exe",
+            "url": "https://example.invalid/TGImprint-9.9.9-Setup.exe",
             "sha256": "cd" * 32, "size": 100, "notes": "A note for the dialog.",
             "package": "%s-9.9.9-full.nupkg" % C.PACK_ID,
             "package_sha256": PACKAGE_SHA, "package_size": 5000,
@@ -269,7 +269,7 @@ try:
         {"PackageId": C.PACK_ID, "Version": "9.9.9", "Type": "Full",
          "FileName": "%s-9.9.9-full.nupkg" % C.PACK_ID, "SHA256": PACKAGE_SHA.upper(), "Size": 5000},
     ]}
-    sizes = {"%s-9.9.9-full.nupkg" % C.PACK_ID: 5000, "EasyPDF-9.9.9-Setup.exe": 100}
+    sizes = {"%s-9.9.9-full.nupkg" % C.PACK_ID: 5000, "TGImprint-9.9.9-Setup.exe": 100}
 
     def fetch(url, limit=None, **kw):
         if url == appupdate.MANIFEST_URL:
@@ -299,7 +299,7 @@ try:
     check("the channel state says so", "source" in appupdate.channel_state(), appupdate.channel_state())
     check("the feed URL is the constant", appupdate.RELEASES_URL == C.RELEASES_URL)
     check("the manifest URL is unchanged for the release checker",
-          appupdate.MANIFEST_URL == "https://tgstudios.app/updates/easy-pdf-app.json")
+          appupdate.MANIFEST_URL == "https://tgstudios.app/updates/tg-imprint-app.json")
 finally:
     appupdate._fetch, appupdate._make_manager = real_fetch, real_maker
     appupdate.PUBLIC_KEY_B64 = REAL_KEY

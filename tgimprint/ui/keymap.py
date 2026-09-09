@@ -28,7 +28,7 @@ event's key is the digit itself. The Ctrl+Shift+digit aliases are gated on
 the physical key code (event.code, "Digit1" and so on), which no layout
 changes. Both are documented together in KEYBOARD.md.
 
-    python easypdf/ui/keymap.py docs/KEYBOARD.md      # regenerate the document
+    python tgimprint/ui/keymap.py docs/KEYBOARD.md      # regenerate the document
 """
 import os
 import sys
@@ -85,10 +85,10 @@ ENTRIES = [
     # ------------------------------------------------------------- File ----
     E("new", "&New", ("Ctrl+N",), "app", "Start a new, empty document."),
     E("open", "&Open...", ("Ctrl+O",), "app",
-      "Open a document: .epdf, .html, .txt, .md, .docx or .pdf."),
+      "Open a document: .imprint, .html, .txt, .md, .docx or .pdf."),
     E("save", "&Save", ("Ctrl+S",), "app", "Save the document."),
     E("save_as", "Save &As...", ("Ctrl+Shift+S",), "app",
-      "Save the document under a new name, as an Easy PDF document."),
+      "Save the document under a new name, as an TG Imprint document."),
     E("save_web_page", "Save as &web page...", (), "app",
       "Write the same document to a .html file any browser can open."),
     E("close_document", "&Close document", ("Ctrl+W",), "app",
@@ -100,7 +100,7 @@ ENTRIES = [
     E("properties", "&Document properties...", ("Alt+Enter",), "app",
       "Properties of the picture at the caret, or of the document: title, "
       "author, language, subject, page size and margins."),
-    E("exit", "E&xit", ("Alt+F4",), "app", "Close Easy PDF."),
+    E("exit", "E&xit", ("Alt+F4",), "app", "Close TG Imprint."),
 
     # ------------------------------------------------------------- Edit ----
     E("undo", "&Undo", ("Ctrl+Z",), "page", "Undo the last change."),
@@ -217,7 +217,7 @@ ENTRIES = [
     E("check_updates", "&Check for updates", (), "app",
       "Ask whether a newer version exists."),
     E("donate", "&Donate", (), "app", "Support TG Studios."),
-    E("about", "&About Easy PDF", (), "app",
+    E("about", "&About TG Imprint", (), "app",
       "The version, the tagline and the PDF engine that was found."),
 
     # -------------------------------------------- the context menu keys ----
@@ -438,9 +438,9 @@ def _rows():
 def render_markdown():
     """docs/KEYBOARD.md, generated. Never edit the file by hand."""
     lines = [
-        "# Easy PDF keyboard reference",
+        "# TG Imprint keyboard reference",
         "",
-        "Generated from `easypdf/ui/keymap.py` by `python easypdf/ui/keymap.py "
+        "Generated from `tgimprint/ui/keymap.py` by `python tgimprint/ui/keymap.py "
         "docs/KEYBOARD.md`. `tests/test_menus.py` fails if this file and the "
         "code disagree, so edit the code and regenerate.",
         "",
@@ -481,7 +481,7 @@ def render_markdown():
 
 def render_text():
     """The F1 window: the same list as plain text a screen reader reads well."""
-    lines = ["Easy PDF keyboard shortcuts", ""]
+    lines = ["TG Imprint keyboard shortcuts", ""]
     current = None
     for menu, label, keys, help_text in _rows():
         if menu != current:

@@ -25,17 +25,17 @@ string **approved** only when Tony has said so.
   and hints" / "Only what I cannot hear or read for myself" / "Nothing. Let
   my screen reader do all of it". Status: the CONVENTIONS.md wording with
   the dash removed; treat as approved unless Tony objects.
-- Second-launch message when the running copy cannot be raised: "Easy PDF
+- Second-launch message when the running copy cannot be raised: "TG Imprint
   is already running. Press Alt+Tab to switch to it." Status: Drop Deck's
   wording, approved there.
-- Credential Manager entry comment: "An AI service key kept by Easy PDF.
+- Credential Manager entry comment: "An AI service key kept by TG Imprint.
   Safe to delete." Status: draft.
-- File type description, shown by Explorer for .epdf files: "Easy PDF
+- File type description, shown by Explorer for .imprint files: "TG Imprint
   document". Status: draft.
 - Startup guard, when the WebView2 runtime is missing (a dialog with a
-  read-only field): "<reason> Easy PDF needs the Microsoft Edge WebView2
+  read-only field): "<reason> TG Imprint needs the Microsoft Edge WebView2
   runtime, which is part of Windows 11 and a free download for Windows
-  10. Install it from this address, then open Easy PDF again:
+  10. Install it from this address, then open TG Imprint again:
   https://developer.microsoft.com/microsoft-edge/webview2/ The address
   has been copied to the clipboard." Status: draft.
 - Second launch with a document while the app is open: no words; the
@@ -58,7 +58,7 @@ string **approved** only when Tony has said so.
 
 Every sentence below is a draft until Tony has read it. Where a sentence
 carries a count, the singular and plural forms are both given. Sources:
-`easypdf/htmlclean.py`, `pdfengine.py`, `pdfexport.py`, `pdfcheck.py`,
+`tgimprint/htmlclean.py`, `pdfengine.py`, `pdfexport.py`, `pdfcheck.py`,
 `pdfimport.py`, `docx_in.py`, `docfile.py`.
 
 ### The sanitiser's warnings (shown after open, paste, import, save and export)
@@ -95,13 +95,13 @@ carries a count, the singular and plural forms are both given. Sources:
 - At export: "The document holds Arabic or Hebrew text. This release has
   not been checked with a right to left screen reader, and the PDF may
   read in the wrong order."
-- "Script in the file was removed. It cannot run inside Easy PDF."
+- "Script in the file was removed. It cannot run inside TG Imprint."
 
 ### The engine
 
 - "<engine> <version> will make the PDF." (for example "Microsoft Edge
   152.0.4191.66 will make the PDF.")
-- "No PDF engine was found. Easy PDF makes its PDF with Microsoft Edge,
+- "No PDF engine was found. TG Imprint makes its PDF with Microsoft Edge,
   the Microsoft Edge WebView2 runtime or Google Chrome, and none of them
   is installed. Install one of them, then export again. Until then, Save
   as web page keeps everything."
@@ -149,7 +149,7 @@ Header: "Accessibility checks for <file name>" then "<ok> of <total>
 checks passed." or "<ok> of <total> checks passed, 1 warning." / "...,
 N warnings." Each check is one line: "PASS: <name>. <detail>", "FAIL:
 <name>. <detail>" or "WARN: <name>. <detail>". Last line: "These are the
-checks Easy PDF can make from here. A full PDF/UA verdict needs PAC or
+checks TG Imprint can make from here. A full PDF/UA verdict needs PAC or
 veraPDF."
 
 Check names: "Tagged PDF", "Structure tree", "Language", "Title shown in
@@ -162,10 +162,10 @@ Details:
 
 - Tagged PDF: "The file says it is tagged." / "The file does not say it
   is tagged (no MarkInfo). A screen reader gets no structure from it.
-  Export it again from Easy PDF."
+  Export it again from TG Imprint."
 - Structure tree: "The tree holds N elements." / "There is no structure
   tree, so headings, lists, links and pictures have no roles. Export it
-  again from Easy PDF."
+  again from TG Imprint."
 - Language: "The document language is <code>." / "The document language
   \"<value>\" is not a language code. Set the language in Document
   properties, for example en-US." / "No document language is set, so a
@@ -173,13 +173,13 @@ Details:
   properties."
 - Title shown in the window: "Viewers show the document title rather than
   the file name." / "Viewers will show the file name instead of the title
-  (DisplayDocTitle is off). Export it again from Easy PDF."
+  (DisplayDocTitle is off). Export it again from TG Imprint."
 - Title: "The title is \"<title>\"." / "The title \"<title>\" is in the
   file's information but not in its XMP metadata, which PDF/UA requires.
-  Export it again from Easy PDF." / "The document has no title. Give it
+  Export it again from TG Imprint." / "The document has no title. Give it
   one in Document properties."
 - PDF/UA identifier: "The file identifies itself as PDF/UA-1." / "No
-  PDF/UA identifier. Easy PDF writes one only when every other check
+  PDF/UA identifier. TG Imprint writes one only when every other check
   passes."
 - Pictures described: "There are no pictures." / "The picture has a
   description." / "All N pictures have a description." / "The picture has
@@ -195,32 +195,32 @@ Details:
   cannot be read)
 - Fonts embedded: "No fonts are used." / "The 1 font is embedded." / "All
   N fonts are embedded." / "1 font is not embedded: <name>. Every reader
-  needs the fonts inside the file. Export it again from Easy PDF." / "N
+  needs the fonts inside the file. Export it again from TG Imprint." / "N
   fonts are not embedded: <names>. Every reader needs the fonts inside
-  the file. Export it again from Easy PDF."
+  the file. Export it again from TG Imprint."
 - Tab order: "No page has links or fields." / "Tab order follows the
   structure on every page with links." / "1 page with links or fields has
-  no tab order set. Export it again from Easy PDF." / "N pages with links
-  or fields have no tab order set. Export it again from Easy PDF."
+  no tab order set. Export it again from TG Imprint." / "N pages with links
+  or fields have no tab order set. Export it again from TG Imprint."
 - Links tagged: "There are no links." / "The 1 link is in the structure
   tree." / "All N links are in the structure tree." / "M of N link is not
   in the structure tree, so a screen reader cannot reach it. Export it
-  again from Easy PDF." / "M of N links are not in the structure tree, so
-  a screen reader cannot reach them. Export it again from Easy PDF."
+  again from TG Imprint." / "M of N links are not in the structure tree, so
+  a screen reader cannot reach them. Export it again from TG Imprint."
 - Links described: "Every link carries its text as a description." / "M
   of N link has no description, so some screen readers read only the
-  address. Easy PDF writes the link text as the description when it
+  address. TG Imprint writes the link text as the description when it
   exports." (links have, when M is more than 1)
 - Bookmarks: "The headings are bookmarks." / "There are no bookmarks.
-  Readers of a long document jump by them; Easy PDF makes one per
+  Readers of a long document jump by them; TG Imprint makes one per
   heading."
 - Text layer: "The pages hold text a screen reader can read." / "This
   PDF is pictures of text. There is no text for a screen reader to read,
-  and Easy PDF has no text recognition in this release. Run OCR in
+  and TG Imprint has no text recognition in this release. Run OCR in
   another program first." / "The PDF has no text at all."
 - All text tagged: "Every piece of text is inside tagged content." / "N
   characters of text are outside any tag, where a screen reader may skip
-  them. Export it again from Easy PDF." (1 character ... is ... it)
+  them. Export it again from TG Imprint." (1 character ... is ... it)
 - List items: "There are no lists." / "The 1 list item carries a label
   and a body." / "Each of the N list items carries a label and a body."
   / "M of N list items have no LBody element. The PDF engine does not
@@ -239,12 +239,12 @@ Details:
 - "This PDF is pictures of text. Nothing could be read from it, and Easy
   PDF has no text recognition in this release. Run OCR in another
   program first."
-- "1 page has no text and may be pictures of text. Easy PDF has no text
+- "1 page has no text and may be pictures of text. TG Imprint has no text
   recognition in this release." / "N pages have no text and may be
-  pictures of text. Easy PDF has no text recognition in this release."
+  pictures of text. TG Imprint has no text recognition in this release."
 - "This PDF is tagged. Its headings and lists are re-created here from
   the text layout, not from its tags, so check them."
-- "Easy PDF cannot open RTF. Open it in WordPad, save it as a Word
+- "TG Imprint cannot open RTF. Open it in WordPad, save it as a Word
   document or plain text, and open that." (any file with the .rtf
   extension or the RTF signature; RTF is out of 1.0.0, decision 3)
 - "1 picture description was recovered from the PDF's tags. Check each
@@ -255,7 +255,7 @@ Details:
 
 ### Opening a Word document
 
-- "That file is not a Word document Easy PDF can open. It needs a .docx
+- "That file is not a Word document TG Imprint can open. It needs a .docx
   file."
 - "The document has tracked changes, which are not read here. Accept the
   changes in Word first, then open it again."
@@ -272,7 +272,7 @@ Details:
 
 ### Pictures on the way in
 
-- "That file is not a picture Easy PDF can read. PNG, JPEG, GIF, BMP and
+- "That file is not a picture TG Imprint can read. PNG, JPEG, GIF, BMP and
   WebP pictures work."
 - "That picture is too large to open. Pictures over about 178 million
   pixels are refused. Reduce it in another program and insert it again."
@@ -293,19 +293,19 @@ Every sentence the window, the editor page and the dialogs show or speak.
 Status of all of them: draft, until Tony has read them. Menu labels that
 name a function (Save, Export PDF, Bold, Zoom in) and field labels (Title,
 Author, Rows) are exempt as structural furniture; the help sentences behind
-every key are in `docs/KEYBOARD.md`, generated from `easypdf/ui/keymap.py`,
+every key are in `docs/KEYBOARD.md`, generated from `tgimprint/ui/keymap.py`,
 and count as strings to approve too.
 
 ### The first run and the status bar
 
-- First run hint, spoken once through announce_help: "Welcome to Easy PDF.
+- First run hint, spoken once through announce_help: "Welcome to TG Imprint.
   Start typing. F1 lists the keys and Ctrl+Shift+E makes the PDF."
 - Word count field: "No words yet", "1 word", "1,234 words".
 - Paragraph style field: "Normal text", "Heading 1" to "Heading 6",
   "Bullet list item", "Numbered list item", "Quote", "Table cell", "Table
   header cell", "Picture: <description>", "Picture without a description",
   "Decorative picture", with ", in a link" added inside a link.
-- Window title: "<document name> - Easy PDF"; a new document is "Untitled".
+- Window title: "<document name> - TG Imprint"; a new document is "Untitled".
 - Autosave: "Autosaved."
 
 ### Confirmations on the help channel (silent below Everything)
@@ -340,7 +340,7 @@ and count as strings to approve too.
   headings before this", "No headings in the document yet."
 - "Pasted. <first note from the cleaner>", "Nothing on the clipboard to
   paste.", "Picture pasted. It needs a description."
-- "Opened from Word. Save will write an Easy PDF document." (also "a web
+- "Opened from Word. Save will write an TG Imprint document." (also "a web
   page", "a text file", "Markdown", "a PDF").
 - "Could not open <name>. <reason>", "Could not save <name>. <reason>".
 - "The PDF needs a title first.", "Export cancelled: a title is needed.",
@@ -364,7 +364,7 @@ and count as strings to approve too.
 - "The user guide is not published yet."
 - "You have the newest version.", "Update skipped. Help, check for updates
   when you are ready.", "The download was stopped. Nothing was changed.",
-  "Download failed. <reason>", "Updating. Easy PDF will close and open
+  "Download failed. <reason>", "Updating. TG Imprint will close and open
   again by itself." (Velopack applies the update and restarts the app;
   there is no portable swap and no second question, 2026-09-09).
 - After that restart, once, on the help channel: "Updated to version
@@ -398,7 +398,7 @@ and count as strings to approve too.
 - Remove picture: "Remove this picture from the document? Description:
   <description> Ctrl+Z puts it back." with "Remove" and "Keep it". Remove
   table: "Remove this empty table from the document? Ctrl+Z puts it back."
-- Recovery: "Easy PDF did not close properly last time, and 1 unsaved
+- Recovery: "TG Imprint did not close properly last time, and 1 unsaved
   document can be recovered:" then "<title>, saved <time>" per line, then
   "Recover opens the most recent one. Delete throws them all away. Not now
   leaves them for next time." with buttons "Recover", "Delete them", "Not
@@ -411,7 +411,7 @@ and count as strings to approve too.
   field label "Notes"), "Could not open", "Could not save", "The PDF could
   not be made", "Accessibility check: <name>", "Update failed", "Update
   ready", "Document title" with the prompt "Document title:".
-- About: "Easy PDF 1.0.0", the tagline, "TG Studios", "PDF engine:
+- About: "TG Imprint 1.0.0", the tagline, "TG Studios", "PDF engine:
   Microsoft Edge 152.0.4191.66" or "none found. Install Microsoft Edge or
   Google Chrome to make PDFs." or "not checked (the engine module is not
   part of this build yet).", then "Updates: <appupdate.channel_state()>",
@@ -527,9 +527,9 @@ and count as strings to approve too.
 
 ## Worker C (describer)
 
-Everything the describer shows, speaks or asks, from `easypdf/ai.py`,
-`easypdf/describe.py`, `easypdf/ui/describe_dialog.py` and
-`easypdf/ui/ai_settings_page.py`. Curly braces mark a value the app fills
+Everything the describer shows, speaks or asks, from `tgimprint/ai.py`,
+`tgimprint/describe.py`, `tgimprint/ui/describe_dialog.py` and
+`tgimprint/ui/ai_settings_page.py`. Curly braces mark a value the app fills
 in: `{who}` is the provider's full name ("Claude, from Anthropic",
 "ChatGPT, from OpenAI", "Gemini, from Google", Drop Deck's wording,
 approved there), `{n}` a number, `{size}` "about 640 KB" or "about
@@ -562,7 +562,7 @@ the answer. Status: draft unless marked otherwise.
   pictures, {size}. The description comes back as text for you to read;
   nothing is written into your document. Before sending anything
   private, check what {Anthropic, OpenAI or Google} says it does with
-  what it receives; the address of its data policy is in Easy PDF's
+  what it receives; the address of its data policy is in TG Imprint's
   guide, DESCRIBER.md, and it is {address}. Send the document?" Without
   a file name, "your whole document". The count reads "no pictures", "one
   picture", "{n} pictures", or over the cap "the first 12 of its {n}
@@ -571,7 +571,7 @@ the answer. Status: draft unless marked otherwise.
   over the internet, {size}, so it can be described for you. The
   description comes back for you to read and change before anything goes
   into your document. You will not be asked again for pictures from your
-  own files until Easy PDF is next opened. Before sending anything
+  own files until TG Imprint is next opened. Before sending anything
   private, [the same policy sentence]. Send the picture?"
 - A picture that came in with an imported document: "This sends one
   picture to {who}, over the internet, {size}, so it can be described for
@@ -583,9 +583,9 @@ the answer. Status: draft unless marked otherwise.
   so they can be described for you. A batch of pictures asks every time.
   Each description comes back for you to read and change before anything
   goes into your document. [policy sentence]. Send the pictures?"
-- The Drop Deck key: "Easy PDF will read the key for {who} that TG Drop
+- The Drop Deck key: "TG Imprint will read the key for {who} that TG Drop
   Deck keeps in Windows Credential Manager, and keep its own copy under
-  Easy PDF's name. Nothing is sent anywhere. Copy the key?"
+  TG Imprint's name. Nothing is sent anywhere. Copy the key?"
 
 ### The picture dialog, shown in the Status line or spoken
 
@@ -622,7 +622,7 @@ the answer. Status: draft unless marked otherwise.
   "The document has about {n} words and only the first 30,000 were sent."
 - "The document is empty, so there is nothing to describe."
 - "The picture could not be prepared for sending, so nothing has left
-  this machine. It may be a kind of picture file Easy PDF cannot read."
+  this machine. It may be a kind of picture file TG Imprint cannot read."
 - "{who} answered, but with nothing that could be used as a description."
 
 ### The AI page of Preferences
@@ -635,21 +635,21 @@ the answer. Status: draft unless marked otherwise.
 - "A key for {who} is kept in Windows Credential Manager, set, ending
   {xxxx}. Clear the box and choose OK to forget it." / "No key for {who}
   is kept yet. Paste one in the box; it goes into Windows Credential
-  Manager as Easy PDF AI key, never into a document or your settings."
+  Manager as TG Imprint AI key, never into a document or your settings."
   ("set, ending xxxx" is `secrets.redact`, Drop Deck's wording.)
 - "Empty means {model}, chosen for accuracy. Get the list asks {who} what
-  it really has. Test sends a tiny picture Easy PDF draws itself, nothing
+  it really has. Test sends a tiny picture TG Imprint draws itself, nothing
   of yours." (the first sentence adapted from Drop Deck's "which is the
   quick one")
 - "The key for {who} has been forgotten."
 - "Windows Credential Manager would not remove the key for {who}. Remove
-  it there yourself, listed as Easy PDF AI key."
+  it there yourself, listed as TG Imprint AI key."
 - "Nothing was copied."
 - "TG Drop Deck has no key for {who} on this machine, so there is nothing
   to copy."
 - "The {who} key was found, but Windows Credential Manager would not
-  keep a copy for Easy PDF. Paste the key into the box instead."
-- "The {who} key from TG Drop Deck is now kept for Easy PDF as well, set,
+  keep a copy for TG Imprint. Paste the key into the box instead."
+- "The {who} key from TG Drop Deck is now kept for TG Imprint as well, set,
   ending {xxxx}."
 - "Put a key in first, then ask for the list." (Drop Deck's, approved)
 - "Asking {who} what it has." (Drop Deck's, without the dots)

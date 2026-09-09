@@ -8,12 +8,12 @@
     discard_snapshot(snapshot_path) -> None
     embed_image(source) -> EmbeddedImage
 
-The native document is .epdf (constants.DOC_EXTENSION): self-contained
+The native document is .imprint (constants.DOC_EXTENSION): self-contained
 UTF-8 HTML with the title, author, subject and language in the head, a
 generator meta, a small stylesheet so it reads right in a browser, every
 picture a data URI, and the body as the one sanitiser left it. "Save as
 web page" is the same bytes written to a .html path; save dispatches on
-nothing. Rename an .epdf to .html and any browser opens it, so nobody's
+nothing. Rename an .imprint to .html and any browser opens it, so nobody's
 writing is ever trapped here (DECISIONS.md decision 3).
 
 Load takes the body of a native or web page, plain text, Markdown
@@ -50,7 +50,7 @@ from . import constants as C
 from . import htmlclean, paths
 
 KINDS = {
-    ".epdf": "native", ".html": "html", ".htm": "html", ".txt": "text",
+    ".imprint": "native", ".html": "html", ".htm": "html", ".txt": "text",
     ".md": "markdown", ".markdown": "markdown", ".docx": "docx", ".pdf": "pdf",
 }
 #: Meta keys that travel in the file head. lang goes on the html element.
@@ -58,11 +58,11 @@ HEAD_META = ("author", "subject")
 PAGE_META = ("page_size", "margin_inches", "font_family", "font_points")
 
 # docs/STRINGS.md, Worker A.
-MSG_NOT_A_PICTURE = ("That file is not a picture Easy PDF can read. PNG, JPEG, GIF, BMP "
+MSG_NOT_A_PICTURE = ("That file is not a picture TG Imprint can read. PNG, JPEG, GIF, BMP "
                      "and WebP pictures work.")
 MSG_TOO_LARGE = ("That picture is too large to open. Pictures over about 178 million "
                  "pixels are refused. Reduce it in another program and insert it again.")
-MSG_RTF = ("Easy PDF cannot open RTF. Open it in WordPad, save it as a Word document "
+MSG_RTF = ("TG Imprint cannot open RTF. Open it in WordPad, save it as a Word document "
            "or plain text, and open that.")
 
 
@@ -270,7 +270,7 @@ def document_html(body_html, meta):
         value = meta.get(key)
         if value is None or str(value).strip() == "":
             continue
-        lines.append('<meta name="easypdf-%s" content="%s">'
+        lines.append('<meta name="tgimprint-%s" content="%s">'
                      % (key.replace("_", "-"), html.escape(str(value), quote=True)))
     lines.append("<style>%s</style>" % DOCUMENT_STYLE.strip("\n"))
     lines.append("</head>")
@@ -286,7 +286,7 @@ def write_atomic(path, text):
     replace, so an interrupted save leaves the previous file intact."""
     folder = os.path.dirname(os.path.abspath(path)) or "."
     handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="\n", dir=folder,
-                                         prefix=".easypdf-", suffix=".part", delete=False)
+                                         prefix=".tgimprint-", suffix=".part", delete=False)
     temp = handle.name
     try:
         with handle:
@@ -408,7 +408,7 @@ def split_page(text):
         "lang": reader.lang if htmlclean._LANG_RE.match(reader.lang or "") else "",
     }
     for key in PAGE_META:
-        value = reader.meta.get("easypdf-" + key.replace("_", "-"))
+        value = reader.meta.get("tgimprint-" + key.replace("_", "-"))
         if value:
             value = _page_setting(key, value)
         if value:

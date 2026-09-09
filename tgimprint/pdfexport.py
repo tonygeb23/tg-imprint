@@ -331,7 +331,7 @@ def put_in_place(source, out_path):
     folder = os.path.dirname(out_path) or "."
     part = None
     try:
-        handle = tempfile.NamedTemporaryFile("wb", dir=folder, prefix=".easypdf-",
+        handle = tempfile.NamedTemporaryFile("wb", dir=folder, prefix=".tgimprint-",
                                              suffix=".pdf.part", delete=False)
         part = handle.name
         with handle, open(source, "rb") as reader:
@@ -391,7 +391,7 @@ def export_html(body_html, out_path, meta, progress=None):
     if not os.path.isdir(out_folder):
         raise EngineError(pdfengine.MSG_BAD_FOLDER % out_folder)
 
-    work = tempfile.mkdtemp(prefix="easypdf-export-")
+    work = tempfile.mkdtemp(prefix="tgimprint-export-")
     try:
         rendered = os.path.join(work, "rendered.pdf")
         patched = os.path.join(work, "patched.pdf")

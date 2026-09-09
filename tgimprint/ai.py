@@ -1,12 +1,12 @@
 """Asking a model that can see, on the user's own key, and nothing more.
 
-Easy PDF's copy of TG Drop Deck's vision.py, which shipped on 8 September
+TG Imprint's copy of TG Drop Deck's vision.py, which shipped on 8 September
 2026 against all three services. The transport (`_request`, the three
 provider functions and their readers), the error sentences in `_trouble`,
 `list_models` and its diggers, `providers_with_keys` and `best_provider`
 are kept with their shape, so a fix found in Drop Deck can be carried
 across by copying the function. What is different is the job. Drop Deck
-looks at a camera before a show and wants speed. Easy PDF writes the
+looks at a camera before a show and wants speed. TG Imprint writes the
 alternative text for a picture that will sit in a distributed file for
 ever, and describes a whole document to somebody who cannot see it, so it
 wants accuracy: pictures go at 1,600 pixels wide rather than 1,024, a PNG
