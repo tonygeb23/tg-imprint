@@ -4,7 +4,8 @@ TG Imprint is a small word processor for Windows that writes PDFs screen
 readers can actually read. This is the whole of it: what it does, how to
 do it, and what it will not do in this version.
 
-Version 0.1.0, an open beta. Free.
+Version 0.1.0, an open beta. Free, and MIT licensed: the source is at
+https://github.com/tonygeb23/tg-imprint.
 
 ---
 

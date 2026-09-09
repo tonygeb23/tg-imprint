@@ -15,6 +15,9 @@ prompt, and an installed copy updates itself in place, with your say-so,
 downloading only what changed. Nothing is downloaded or applied without
 asking, and every update is checked against the TG Studios signature.
 
+Free and MIT licensed. The source is at
+https://github.com/tonygeb23/tg-imprint, and pull requests are welcome.
+
 ## Running from source
 
 Python 3.13 with the packages in `requirements.txt`:
