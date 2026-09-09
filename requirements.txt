@@ -12,3 +12,7 @@ Pillow
 cryptography
 # Speech and braille through the running screen reader.
 accessible_output2
+# Word documents in. Reads the docx zip; nothing here writes one.
+python-docx
+# Markdown in. Pure Python; CommonMark plus tables.
+markdown-it-py

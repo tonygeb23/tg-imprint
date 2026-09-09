@@ -163,6 +163,13 @@ def build_executable():
         # a build that could not draw. The selftest opens and resizes a
         # real image so that cannot happen quietly here.
         "--collect-all", "PIL",
+        # The two readers, imported lazily inside the functions that use
+        # them, so named here rather than trusted to the import walk. The
+        # selftest imports both so a build that lost one says so.
+        "--hidden-import", "docx",
+        "--hidden-import", "markdown_it",
+        "--collect-all", "docx",
+        "--collect-all", "markdown_it",
         # Nothing here needs any of these, and an editable install elsewhere
         # on this machine once dragged torch and friends into a build through
         # a .pth file: 1.1 GB instead of 170 MB. The excludes are load bearing.

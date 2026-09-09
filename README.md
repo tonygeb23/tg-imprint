@@ -19,8 +19,9 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Microsoft Edge (or Google Chrome) must be installed: it is the engine that
-writes the tagged PDF. Windows 11 ships Edge.
+The tagged PDF is written by the Chromium engine already on the machine:
+Microsoft Edge, the Edge WebView2 runtime that the editor itself needs,
+or Google Chrome, in that order. Windows 11 ships the first two.
 
 ## Keys
 

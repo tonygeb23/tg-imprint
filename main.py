@@ -174,13 +174,52 @@ def selftest():  # noqa: C901
     except Exception as exc:
         problems.append("Pillow raised in this build: %r" % exc)
 
+    # ---- the readers a frozen build can lose without noticing ----------------
+    for module, why in (("docx", "Word documents could not be opened"),
+                        ("markdown_it", "Markdown could not be opened")):
+        try:
+            __import__(module)
+            notes.append("%s: importable" % module)
+        except Exception as exc:
+            problems.append("%s is missing from this build, so %s: %r"
+                            % (module, why, exc))
+
     # ---- the PDF engine ------------------------------------------------------
+    # Every engine the finder knows is rendered and read back, not only the
+    # first: the one a customer's machine falls through to is the one that
+    # matters, and a candidate that produces an untagged file must be found
+    # here rather than on their desk.
     engine_ok = False
     try:
         from easypdf import pdfengine
         ok, detail = pdfengine.available()
         engine_ok = bool(ok)
         (notes if ok else problems).append("pdf engine: %s" % detail)
+        engines = list(pdfengine.engines()) if hasattr(pdfengine, "engines") else []
+        if engines:
+            import pikepdf as _pk
+            probe_html = ("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+                          "<title>Engine probe</title></head><body><h1>Probe</h1>"
+                          "<p>One <strong>line</strong>.</p></body></html>")
+            for engine in engines:
+                name = getattr(engine, "name", None) or str(engine)
+                path = getattr(engine, "path", None) or ""
+                target = os.path.join(tempfile.mkdtemp(prefix="easypdf-engine-"),
+                                      "probe.pdf")
+                try:
+                    if hasattr(pdfengine, "render_with"):
+                        pdfengine.render_with(engine, probe_html, target)
+                    else:
+                        pdfengine.render_pdf(probe_html, target)
+                    with _pk.open(target) as pdf:
+                        tags = "/StructTreeRoot" in pdf.Root
+                    (notes if tags else problems).append(
+                        "engine %s at %s: %s" % (name, path,
+                                                  "tagged PDF" if tags
+                                                  else "UNTAGGED output"))
+                except Exception as exc:
+                    problems.append("engine %s at %s failed to render: %r"
+                                    % (name, path, exc))
     except ImportError:
         notes.append("pdf engine: module not written yet")
     except Exception as exc:
@@ -196,19 +235,40 @@ def selftest():  # noqa: C901
                     "<ul><li>One</li><li>Two</li></ul>")
             meta = {"title": "Easy PDF selftest", "author": C.VENDOR,
                     "lang": "en-US", "subject": ""}
-            pdfexport.export_html(body, out, meta)
+            result = pdfexport.export_html(body, out, meta)
             import pikepdf as _pk
             with _pk.open(out) as pdf:
                 root = pdf.Root
                 tagged = "/StructTreeRoot" in root
                 marked = bool(root.get("/MarkInfo", {}).get("/Marked", False))
                 lang = str(root.get("/Lang", ""))
+                producer = str(pdf.docinfo.get("/Producer", ""))
+                # The PDF/UA identifier, in its own namespace. pikepdf writes
+                # it correctly (CHALLENGE.md E9) but a build could carry a
+                # pikepdf whose XMP support is broken, and the only way to
+                # know is to read it back.
+                with pdf.open_metadata() as meta_xmp:
+                    part = str(meta_xmp.get("pdfuaid:part", "")).strip()
             if not (tagged and marked):
                 problems.append("the exported PDF has no structure tree, so it "
                                 "is not accessible; the engine ran but did not "
                                 "tag the output")
             else:
                 notes.append("export: tagged PDF written, lang %s" % lang)
+            claimed = getattr(result, "pdfua_claimed", None)
+            if claimed is False:
+                notes.append("export: PDF/UA identifier withheld by the "
+                             "checker's gate, as designed")
+            elif part != "1":
+                problems.append("the PDF/UA identifier did not come back from "
+                                "the file (pdfuaid:part is %r)" % part)
+            else:
+                notes.append("export: pdfuaid:part 1 read back from the file")
+            if C.APP_NAME not in producer:
+                problems.append("the Producer does not name %s: %r"
+                                % (C.APP_NAME, producer))
+            else:
+                notes.append("export: Producer %s" % producer)
             try:
                 from easypdf import pdfcheck
                 report = pdfcheck.check(out)
@@ -227,10 +287,34 @@ def selftest():  # noqa: C901
         except Exception as exc:
             problems.append("export raised: %r" % exc)
 
+    # ---- the sanitiser -------------------------------------------------------
+    # A received file ran its onerror handler inside the editor when loaded
+    # raw. Only sanitised HTML may enter the page, so the sanitiser is proved
+    # here with the two shapes that matter.
+    try:
+        from easypdf import htmlclean
+        hostile = ('<p>x</p><img src="nope" onerror="alert(1)" alt="">'
+                   '<a href="javascript:alert(2)">link</a><script>alert(3)</script>')
+        cleaned = htmlclean.normalise(hostile)
+        text = cleaned[0] if isinstance(cleaned, tuple) else cleaned
+        low = text.lower()
+        if "onerror" in low or "javascript:" in low or "<script" in low:
+            problems.append("the sanitiser let a handler, a javascript "
+                            "address or a script through")
+        else:
+            notes.append("sanitiser: handlers, javascript addresses and "
+                         "scripts stripped")
+    except ImportError:
+        notes.append("sanitiser: module not written yet")
+    except Exception as exc:
+        problems.append("the sanitiser raised: %r" % exc)
+
     # ---- the editor surface --------------------------------------------------
     # WebView2Loader.dll is not something PyInstaller collects on its own,
     # and without it the editor is an empty grey panel that never loads and
-    # never raises. Load a real page and read the DOM back.
+    # never raises. Load a real page and read the DOM back, asynchronously:
+    # a synchronous RunScript can hang (CHALLENGE.md W2) and would take the
+    # watchdog timer down with it, since both live on this thread.
     app = wx.App(redirect=False)
     try:
         import wx.html2 as webview
@@ -244,9 +328,18 @@ def selftest():  # noqa: C901
             outcome = {}
 
             def loaded(_event):
-                ok, text = view.RunScript(
-                    "document.getElementById('ed').textContent")
-                outcome["text"] = text if ok else None
+                view.RunScriptAsync(
+                    "JSON.stringify({text: document.getElementById('ed')"
+                    ".textContent, dpr: window.devicePixelRatio})")
+
+            def answered(event):
+                try:
+                    import json as _json
+                    got = _json.loads(event.GetString())
+                    outcome["text"] = got.get("text")
+                    outcome["dpr"] = float(got.get("dpr") or 0)
+                except Exception:
+                    outcome["text"] = None
                 app.ExitMainLoop()
 
             def timed_out():
@@ -255,14 +348,28 @@ def selftest():  # noqa: C901
                     app.ExitMainLoop()
 
             view.Bind(webview.EVT_WEBVIEW_LOADED, loaded)
+            view.Bind(webview.EVT_WEBVIEW_SCRIPT_RESULT, answered)
             view.SetPage('<html><body><div id="ed" contenteditable="true">'
                          'editor probe</div></body></html>', "about:blank")
             probe.Show()
             wx.CallLater(8000, timed_out)
             app.MainLoop()
+            scale = float(probe.GetDPIScaleFactor())
             probe.Destroy()
             if outcome.get("text") == "editor probe":
-                notes.append("editor: WebView2 loads and answers")
+                notes.append("editor: WebView2 loads and answers asynchronously")
+                dpr = outcome.get("dpr", 0.0)
+                # A process that is not DPI aware is stretched by Windows and
+                # the page reports a ratio of 1 whatever the display scale
+                # (CHALLENGE.md W12). The frame knows the real scale.
+                if dpr + 0.01 < scale:
+                    problems.append("the editor is being stretched: the page "
+                                    "sees a pixel ratio of %.2f on a display "
+                                    "at %.2f, so the process is not DPI aware"
+                                    % (dpr, scale))
+                else:
+                    notes.append("editor: pixel ratio %.2f on a display at %.2f"
+                                 % (dpr, scale))
             else:
                 problems.append("the editor page never loaded, or the DOM "
                                 "could not be read back")
