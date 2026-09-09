@@ -1,0 +1,6 @@
+Sample document
+
+A first paragraph of plain text.
+
+A second paragraph,
+wrapped across two lines.
