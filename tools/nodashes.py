@@ -30,6 +30,14 @@ import os
 import re
 import sys
 
+# A Windows console is cp1252 by default and cannot print the offending
+# line when it holds a character outside that set, so the report itself
+# crashed. Print what can be printed.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 EM = chr(8212)
 EN = chr(8211)
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
