@@ -43,8 +43,20 @@ string awaiting Tony's approval.
   import, save and export all go through `htmlclean.normalise`.
 - **The native document is `.epdf`**, self-contained HTML inside a file
   type the installer registers. `.html` is an import and an export.
-- **The frozen block in `easypdf/constants.py` and the AppId GUID in
-  `tools/easypdf.iss` never change.** `tests/test_scaffold.py` asserts them.
+- **The frozen block in `easypdf/constants.py` never changes after the
+  first publish**, and that now includes the Velopack package id
+  `TGStudios.EasyPDF`, which names the install folder and every update
+  package. `tests/test_scaffold.py` asserts them. Until the first publish
+  a rename is one commit; see `docs/DECISIONS.md` decision 6.
+- **Velopack is the installer and the updater** (Tony, 2026-09-09, for
+  every new TG Studios program; the older apps keep their own). Its feed
+  is unsigned, so `appupdate.py` still checks the TG Studios ed25519
+  manifest and refuses anything Velopack offers that the manifest does not
+  vouch for. `velopack.App().run()` is the first line of `main.py` that
+  does anything, before DPI and before wx: it exits the process when it is
+  running an install, update or uninstall hook, and those hooks are where
+  `filetype.py` registers and removes `.epdf`. `TG Studios\RELEASING.md`
+  has the Velopack section of the pipeline.
 - **Runs on the global Python 3.13.5, no venv**, like the other apps.
 - **Build outside Dropbox.** `tools/build_release.py` does; do not point
   PyInstaller into this tree.
