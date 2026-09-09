@@ -316,6 +316,12 @@ class EasyPdfApp(wx.App):
         frame = build_main_window(self.open_path)
         # Mark this window as the one a second launch should reopen.
         self.instance.tag_window(frame)
+        # And the one a second launch hands a document to. The window
+        # exposes open_document(path); until it does, the path is dropped
+        # after the window is raised, which is what the April build did.
+        from easypdf import handoff
+        opener = getattr(frame, "open_document", None)
+        self.receiver = handoff.Receiver(frame, opener) if opener else None
         frame.Show()
         self.SetTopWindow(frame)
         return True
@@ -371,7 +377,13 @@ def main():
     # that silently does nothing is indistinguishable from the program
     # failing to start, for somebody not watching the screen.
     instance = SingleInstance(C.INSTANCE_SLUG)
+    open_path = file_argument(sys.argv)
     if instance.already_running:
+        # A second launch with a document hands the document over first,
+        # then raises the window. Raising alone would throw the path away.
+        if open_path:
+            from easypdf import handoff
+            handoff.hand_over(instance, open_path)
         if instance.raise_existing():
             return 0
         wx.MessageBox(
@@ -379,8 +391,12 @@ def main():
             % C.APP_NAME, C.APP_NAME, wx.OK | wx.ICON_INFORMATION)
         return 0
 
-    app = EasyPdfApp(instance, open_path=file_argument(sys.argv), redirect=False)
+    from easypdf import paths
+    paths.mark_started()        # sets paths.PREVIOUS_RUN_CRASHED for the window
+    app = EasyPdfApp(instance, open_path=open_path, redirect=False)
     app.MainLoop()
+    # Only a clean close gets here; a crash leaves the marker for next time.
+    paths.mark_clean_exit()
     instance.release()
     return 0
 

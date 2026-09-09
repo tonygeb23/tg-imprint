@@ -73,3 +73,47 @@ def documents_dir():
     home = os.path.expanduser("~")
     docs = os.path.join(home, "Documents")
     return docs if os.path.isdir(docs) else home
+
+
+# ------------------------------------------------------------ clean exit ---
+#
+# Crash recovery needs to know whether the last run ended on purpose. Some
+# exits here are hard exits (the selftest, the update hand-over), so "the
+# process is gone" cannot be the signal. A marker file is: written when the
+# app starts, removed when it closes cleanly. If it is there at the next
+# start, the last run did not close cleanly and any autosave snapshot is
+# worth offering.
+
+def _marker():
+    return os.path.join(local_dir(), "running.marker")
+
+
+#: Set by mark_started() and read by the window when it decides whether to
+#: offer a recovered snapshot. None until mark_started has run.
+PREVIOUS_RUN_CRASHED = None
+
+
+def mark_started():
+    """Call once at start. Returns True if the previous run did NOT end cleanly."""
+    global PREVIOUS_RUN_CRASHED
+    crashed = os.path.exists(_marker())
+    try:
+        with open(_marker(), "w", encoding="utf-8") as fh:
+            fh.write(str(os.getpid()))
+    except OSError:
+        pass
+    PREVIOUS_RUN_CRASHED = crashed
+    return crashed
+
+
+def mark_clean_exit():
+    """Call on a clean close, before the process ends, however it ends."""
+    try:
+        os.remove(_marker())
+    except OSError:
+        pass
+
+
+def last_run_crashed():
+    """Whether the marker is present. Read-only; mark_started consumes it."""
+    return os.path.exists(_marker())

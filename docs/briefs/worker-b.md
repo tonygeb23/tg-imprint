@@ -43,6 +43,19 @@ bar whose first field is wide enough for a sentence, and implements:
 `main.py` builds the frame, tags it for single instance, shows it. It will
 pass a document path from the command line; open it.
 
+Two more contract points, added 2026-09-09 after the Challenger's review:
+
+- The frame exposes **`open_document(path)`**: run the unsaved-changes
+  prompt, then load the file. `main.py` installs `easypdf/handoff.py`'s
+  receiver on the frame, so a second launch with a document (a double
+  click in Explorer while the app is open) calls this on the UI thread.
+  One window, one document.
+- **Crash recovery reads `paths.PREVIOUS_RUN_CRASHED`.** `main.py` writes
+  a running marker before the window exists and removes it only after
+  `MainLoop` returns cleanly. The frame offers `docfile.recoverable()`
+  snapshots only when that flag is True, so a normal restart never nags.
+  The frame must therefore close normally; never `os._exit` from the UI.
+
 ## The editor
 
 One editor: a WebView2 page (`wx.html2`, Edge backend) holding a
