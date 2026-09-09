@@ -197,6 +197,17 @@ def copy_payload():
         if os.path.exists(source):
             shutil.copy2(source, os.path.join(BUNDLE, target))
             print(f"  copied {target}")
+    # The user-facing documents, beside the program where Help can open
+    # them and a person can find them without the app: what the describer
+    # sends and when (the consent text names it), the keyboard map, and
+    # what the PDF export guarantees.
+    docs_out = os.path.join(BUNDLE, "docs")
+    os.makedirs(docs_out, exist_ok=True)
+    for name in ("DESCRIBER.md", "KEYBOARD.md", "PDF-UA.md"):
+        source = os.path.join(HERE, "docs", name)
+        if os.path.exists(source):
+            shutil.copy2(source, os.path.join(docs_out, name))
+            print(f"  copied docs/{name}")
 
 
 def make_zip():

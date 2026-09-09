@@ -176,8 +176,10 @@ def forget(station, prefix=TARGET_PREFIX):
     except Exception:
         return False
     # Deleting something that was never there is a success, not a failure:
-    # what was asked for was that no key is kept, and none is.
-    return not fetch(station)
+    # what was asked for was that no key is kept, and none is. Checked under
+    # the same prefix it was asked to delete; the Drop Deck copy checks the
+    # default prefix here, which Worker C caught on 2026-09-09.
+    return not fetch(station, prefix)
 
 
 def redact(key):
