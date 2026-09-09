@@ -1,4 +1,5 @@
 """Every dialog's controls have an accessible name; two source rules.
+import time
 
     python tests/test_ui_names.py
 
@@ -234,6 +235,64 @@ check("the walk reports an unnamed text field", bool(problems), problems)
 check("the deliberate failure was recorded as a failure", last is False)
 
 frame.Destroy()
+# ---------------------------------------------------------------------------
+# Every labelled field says its own name, measured through UI Automation.
+#
+# Tony, 2026-09-09, on the installed 1.0.0: "when I press control P to open
+# page properties, the first edit box is empty of a edit field title, no clue
+# what it is, I tab again to the next one and it says title." The names were
+# off by one: the caller builds each control before its static, so a screen
+# reader named every field from the PREVIOUS row's label and the first from
+# nothing. add_row gives every field a real name now.
+print("\nEvery labelled field carries its own accessible name")
+try:
+    import comtypes.client as _cc
+    _cc.GetModule("UIAutomationCore.dll")
+    from comtypes.gen import UIAutomationClient as _U
+    from easypdf.ui.doc_properties_dialog import DocPropertiesDialog
+
+    _frame = wx.Frame(None)
+    _dlg = DocPropertiesDialog(_frame, {"title": "", "author": "",
+                                        "subject": "", "lang": "en-US"})
+    _frame.Show()
+    _dlg.Show()
+    import time as _time
+    for _ in range(20):
+        wx.Yield()
+        _time.sleep(0.05)
+    _auto = _cc.CreateObject("{ff48dba4-60ef-4201-aa87-54103eef594e}",
+                             interface=_U.IUIAutomation)
+    _walker = _auto.ControlViewWalker
+    _found = []
+
+    def _walk(element):
+        child = _walker.GetFirstChildElement(element)
+        while child:
+            try:
+                kind, name = child.CurrentLocalizedControlType, child.CurrentName
+            except Exception:
+                kind, name = "", ""
+            if kind in ("edit", "combo box"):
+                _found.append((kind, name or ""))
+            _walk(child)
+            child = _walker.GetNextSiblingElement(child)
+
+    _walk(_auto.ElementFromHandle(int(_dlg.GetHandle())))
+    check("the dialog's fields were found", len(_found) >= 5, _found)
+    check("every field has a name", all(n.strip() for _k, n in _found), _found)
+    check("no two fields share a name",
+          len({n for _k, n in _found}) == len(_found), _found)
+    _names = [n for _k, n in _found]
+    check("the first field is the title", _names and _names[0] == "Title", _names)
+    check("and no name is a label with its colon left on",
+          not any(n.endswith(":") for n in _names), _names)
+    _dlg.Destroy()
+    _frame.Destroy()
+except ImportError:
+    print("  skip comtypes is not installed, so the tree cannot be read")
+
+
 print("\n%d/%d checks passed" % (sum(CHECKS), len(CHECKS)))
 sys.stdout.flush()
 os._exit(0 if all(CHECKS) else 1)
+

@@ -68,6 +68,24 @@ def labelled(parent, sizer, label, control, flag=wx.EXPAND, border=10, proportio
     return control
 
 
+def label_to_name(label):
+    """"&Title:" becomes "Title": what a screen reader should say."""
+    out = []
+    skip = False
+    for i, ch in enumerate(label or ""):
+        if skip:
+            skip = False
+            continue
+        if ch == "&":
+            # "&&" is a real ampersand; a single "&" is the mnemonic.
+            if i + 1 < len(label) and label[i + 1] == "&":
+                out.append("&")
+                skip = True
+            continue
+        out.append(ch)
+    return "".join(out).strip().rstrip(":").strip()
+
+
 def add_row(parent, grid, label, control, name=None):
     """A label and a control in a two column FlexGridSizer.
 
@@ -78,11 +96,17 @@ def add_row(parent, grid, label, control, name=None):
     puts it on screen.
     """
     static = wx.StaticText(parent, label=label)
-    static.MoveBeforeInTabOrder(control)
+    control.MoveAfterInTabOrder(static)
     grid.Add(static, 0, wx.ALIGN_CENTER_VERTICAL)
     grid.Add(control, 1, wx.EXPAND)
-    if name:
-        name_field(control, name)
+    # EVERY field gets a real accessible name, taken from its own label when
+    # the caller did not give one. Tony, 2026-09-09: the first field of
+    # Document properties announced nothing and the second announced the
+    # first one's label. The cause is that the caller builds the control
+    # before the static, so the static a screen reader would name it from is
+    # the PREVIOUS row's. Moving windows in tab order does not fix it; a
+    # name on the control does, and it cannot drift by one.
+    name_field(control, name or label_to_name(label))
     return control
 
 
