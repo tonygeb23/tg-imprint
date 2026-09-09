@@ -418,7 +418,7 @@ and count as strings to approve too.
   which is "source build, correctly disabled", "frozen but not installed
   by Velopack, so it cannot update itself" or "live, installed copy" (or
   "live, portable copy"), then "A TG Studios program. Questions and
-  reports to hello@tgstudios.app. Tested with NVDA." and the home page
+  reports to info@tonygebhard.me. Tested with NVDA." and the home page
   address. Field label "About".
 - Keyboard shortcuts (F1): the F1 text generated from keymap.py, including
   its two closing paragraphs about AltGr and lists and tables.

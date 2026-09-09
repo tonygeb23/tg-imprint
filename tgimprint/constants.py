@@ -63,7 +63,7 @@ ZIP_BASENAME = "TG-Imprint"
 HOME_URL = "https://tgstudios.app/tg-imprint/"
 USER_GUIDE_URL = "https://tgstudios.app/tg-imprint-guide/"
 DONATE_URL = "https://tgstudios.app/donate/"
-FEEDBACK_EMAIL = "hello@tgstudios.app"
+FEEDBACK_EMAIL = "info@tonygebhard.me"
 WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
 
 # ------------------------------------------------------------------ files ---

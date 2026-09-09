@@ -352,7 +352,7 @@ Google Chrome.
 If a key does nothing, F1 shows every key the app knows.
 
 It is a beta. If something breaks, or a description reads wrongly, or your
-screen reader says something unhelpful, write to hello@tgstudios.app and
+screen reader says something unhelpful, write to info@tonygebhard.me and
 say what you did and what you heard.
 
 ## 18. Every key

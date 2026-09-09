@@ -73,6 +73,6 @@ most machines.
 
 ## Get in touch
 
-Feedback and bug reports to hello@tgstudios.app. If you use JAWS or
+Feedback and bug reports to info@tonygebhard.me. If you use JAWS or
 Narrator rather than NVDA, say what you heard: this version was tested
 with NVDA.
