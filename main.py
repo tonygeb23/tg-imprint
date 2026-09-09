@@ -604,6 +604,18 @@ def main():
         return 0
 
     from easypdf import paths
+    # The document type, on every start of an installed copy. Velopack's
+    # after-install hook does this too, but a hook that fails leaves no
+    # trace and a user with a .epdf file that opens nothing (measured on
+    # the 1.0.0 install, 2026-09-09). Registering here as well is cheap,
+    # idempotent, and the one path that certainly runs.
+    if paths.is_frozen():
+        try:
+            from easypdf import appupdate as _au, filetype as _ft
+            if _au.is_installed() and not _ft.registered():
+                _ft.register()
+        except Exception:
+            pass
     paths.mark_started()        # sets paths.PREVIOUS_RUN_CRASHED for the window
     app = EasyPdfApp(instance, open_path=open_path, redirect=False)
     app.MainLoop()
