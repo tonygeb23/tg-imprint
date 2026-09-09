@@ -1,264 +1,137 @@
+"""The toolbar: drawn icons, text labels, tooltips that name the key.
+
+Every tool is a keymap entry, so the label, the tooltip and the handler come
+from the same list as the menus. The bitmaps are drawn in system colours at
+the size the DPI asks for (icons.py) and redrawn when the colours change, so
+they hold up at 150 percent and in High Contrast. Toggle state follows the
+editor's own state messages; the accessible name of a tool never changes on
+a value change.
+"""
 import wx
-from easypdf.ui.editor import _STYLE_CFG
 
-_PARA_STYLES = [
-    "Normal",
-    "Heading 1", "Heading 2", "Heading 3",
-    "Heading 4", "Heading 5", "Heading 6",
-    "Bullet List", "Numbered List",
-    "Block Quote",
-]
+from . import icons
+from . import keymap
+
+#: What the bar shows, in order. None is a separator; "style" is the
+#: paragraph style choice.
+LAYOUT = ("new", "open", "save", None, "style", None, "bold", "italic",
+          "underline", "strike", None, "bullets", "numbers", "quote", None,
+          "align_left", "align_center", "align_right", "align_justify", None,
+          "insert_link", "insert_picture", "insert_table", None, "export_pdf")
+
+#: The paragraph style choice, in the order it lists them, each naming the
+#: keymap action that applies it and the block names the editor reports.
+STYLES = (("Normal text", "normal", ("p",)),
+          ("Heading 1", "heading1", ("h1",)),
+          ("Heading 2", "heading2", ("h2",)),
+          ("Heading 3", "heading3", ("h3",)),
+          ("Heading 4", "heading4", ("h4",)),
+          ("Heading 5", "heading5", ("h5",)),
+          ("Heading 6", "heading6", ("h6",)),
+          ("Bullet list", "bullets", ("ul",)),
+          ("Numbered list", "numbers", ("ol",)),
+          ("Quote", "quote", ("blockquote",)))
 
 
-class FormattingToolbar(wx.ToolBar):
-    """
-    Formatting toolbar.
-
-    Every control has SetName() / SetToolTip() so NVDA announces it on
-    Tab + arrow-key navigation.
-
-    Layout (left → right):
-      [Style] [Size]  |  [Bold] [Italic] [Underline]  |
-      [Left] [Center] [Right] [Justify]  |  [Image]
-    """
-
-    def __init__(self, parent: wx.Frame) -> None:
-        super().__init__(parent, style=wx.TB_HORIZONTAL | wx.TB_TEXT | wx.TB_NOICONS)
-        self._parent   = parent
-        self._editor   = None
-        self._updating = False
-
-        self._build()
-        self.Realize()
-
-    def set_editor(self, editor) -> None:
-        self._editor = editor
-
-    # ------------------------------------------------------------------
-    # Construction
-    # ------------------------------------------------------------------
-
-    def _build(self) -> None:
-        _bmp = lambda: wx.ArtProvider.GetBitmap(
-            wx.ART_NORMAL_FILE, wx.ART_TOOLBAR, (16, 16)
-        )
-
-        # ---- Paragraph style picker ----
-        self.AddControl(wx.StaticText(self, label="Style:"))
-        self._style_choice = wx.Choice(self, choices=_PARA_STYLES)
-        self._style_choice.SetSelection(0)
-        self._style_choice.SetName("Paragraph style")
-        self._style_choice.SetToolTip(
-            "Paragraph style. "
-            "Ctrl+Alt+1–6 for Heading 1–6, "
-            "Ctrl+Alt+0 Normal, Ctrl+Alt+8 Bullet, Ctrl+Alt+9 Numbered, "
-            "Ctrl+Q Block Quote."
-        )
-        self.AddControl(self._style_choice)
-
-        self.AddSeparator()
-
-        # ---- Font size spinner ----
-        self.AddControl(wx.StaticText(self, label="Size:"))
-        self._size_ctrl = wx.SpinCtrl(
-            self, min=6, max=144, initial=11,
-            style=wx.SP_ARROW_KEYS | wx.TE_PROCESS_ENTER,
-            size=(56, -1),
-        )
-        self._size_ctrl.SetName("Font size in points")
-        self._size_ctrl.SetToolTip("Font size in points. Type a value or use Up/Down arrow keys.")
-        self.AddControl(self._size_ctrl)
-
-        self.AddSeparator()
-
-        # ---- Character formatting toggles ----
-        self._id_bold = wx.NewIdRef()
-        self.AddTool(self._id_bold, "Bold",
-                     _bmp(), shortHelp="Bold — Ctrl+B", kind=wx.ITEM_CHECK)
-
-        self._id_italic = wx.NewIdRef()
-        self.AddTool(self._id_italic, "Italic",
-                     _bmp(), shortHelp="Italic — Ctrl+Shift+I", kind=wx.ITEM_CHECK)
-
-        self._id_underline = wx.NewIdRef()
-        self.AddTool(self._id_underline, "Underline",
-                     _bmp(), shortHelp="Underline — Ctrl+U", kind=wx.ITEM_CHECK)
-
-        self._id_strike = wx.NewIdRef()
-        self.AddTool(self._id_strike, "Strike",
-                     _bmp(), shortHelp="Strikethrough — Ctrl+Shift+K", kind=wx.ITEM_CHECK)
-
-        self.AddSeparator()
-
-        # ---- Paragraph alignment (radio group) ----
-        self._id_align_left    = wx.NewIdRef()
-        self._id_align_center  = wx.NewIdRef()
-        self._id_align_right   = wx.NewIdRef()
-        self._id_align_justify = wx.NewIdRef()
-
-        self.AddTool(self._id_align_left,    "Left",
-                     _bmp(), shortHelp="Align Left — Ctrl+L",    kind=wx.ITEM_RADIO)
-        self.AddTool(self._id_align_center,  "Center",
-                     _bmp(), shortHelp="Align Center — Ctrl+E",  kind=wx.ITEM_RADIO)
-        self.AddTool(self._id_align_right,   "Right",
-                     _bmp(), shortHelp="Align Right — Ctrl+R",   kind=wx.ITEM_RADIO)
-        self.AddTool(self._id_align_justify, "Justify",
-                     _bmp(), shortHelp="Justify — Ctrl+J",       kind=wx.ITEM_RADIO)
-        self.ToggleTool(self._id_align_left, True)   # default state
-
-        self.AddSeparator()
-
-        # ---- Insert image ----
-        self._id_image = wx.NewIdRef()
-        self.AddTool(self._id_image, "Insert Image",
-                     wx.ArtProvider.GetBitmap(wx.ART_ADD_BOOKMARK, wx.ART_TOOLBAR, (16, 16)),
-                     shortHelp="Insert image with alt text — Ctrl+I")
-
-        # ---- Bindings ----
-        self._parent.Bind(wx.EVT_CHOICE,     self._on_style_choice, self._style_choice)
-        self._parent.Bind(wx.EVT_SPINCTRL,   self._on_size_spin,    self._size_ctrl)
-        self._parent.Bind(wx.EVT_TEXT_ENTER, self._on_size_enter,   self._size_ctrl)
-        self._parent.Bind(wx.EVT_TOOL, self._on_bold,         id=self._id_bold)
-        self._parent.Bind(wx.EVT_TOOL, self._on_italic,       id=self._id_italic)
-        self._parent.Bind(wx.EVT_TOOL, self._on_underline,    id=self._id_underline)
-        self._parent.Bind(wx.EVT_TOOL, self._on_strike,       id=self._id_strike)
-        self._parent.Bind(wx.EVT_TOOL, self._on_align_left,   id=self._id_align_left)
-        self._parent.Bind(wx.EVT_TOOL, self._on_align_center, id=self._id_align_center)
-        self._parent.Bind(wx.EVT_TOOL, self._on_align_right,  id=self._id_align_right)
-        self._parent.Bind(wx.EVT_TOOL, self._on_align_justify,id=self._id_align_justify)
-        self._parent.Bind(wx.EVT_TOOL, self._on_insert_image, id=self._id_image)
-
-    # ------------------------------------------------------------------
-    # Handlers
-    # ------------------------------------------------------------------
-
-    def _on_style_choice(self, event: wx.CommandEvent) -> None:
-        if self._editor is None or self._updating:
-            return
-        sel = self._style_choice.GetString(self._style_choice.GetSelection())
-        self._editor.apply_paragraph_style(sel)
-
-    def _on_size_spin(self, event: wx.SpinEvent) -> None:
-        if self._editor is None or self._updating:
-            return
-        self._apply_font_size(self._size_ctrl.GetValue())
-
-    def _on_size_enter(self, event: wx.CommandEvent) -> None:
-        if self._editor is None:
-            return
-        self._apply_font_size(self._size_ctrl.GetValue())
-        if self._editor.ctrl is not None:
-            self._editor.ctrl.SetFocus()
-
-    def _apply_font_size(self, pt: int) -> None:
-        """Apply font size while preserving all other character formatting."""
-        if self._editor.ctrl is None:
-            # WebEditor — use the standard execCommand fontSize (1-7)
-            # mapped roughly to the chosen point size.  For finer control
-            # the user can still change size via the Format → Font dialog.
-            self._editor._js_call(
-                "exec", "fontSize",
-                str(min(7, max(1, round(pt / 6)))),
-            )
-            return
-        s, e = self._editor.ctrl.GetSelection()
-        if s == e:
-            s, e = self._editor._effective_range()
-        attr = wx.TextAttr()
-        self._editor.ctrl.GetStyle(s, attr)   # read existing first
-        attr.SetFontPointSize(pt)
-        self._editor.ctrl.SetStyle(s, e, attr)
-        default = wx.TextAttr()
-        self._editor.ctrl.GetStyle(s, default)
-        default.SetFontPointSize(pt)
-        self._editor.ctrl.SetDefaultStyle(default)
-
-    def _on_bold(self, event: wx.CommandEvent) -> None:
-        if self._editor:
-            self._editor.toggle_bold()
-
-    def _on_italic(self, event: wx.CommandEvent) -> None:
-        if self._editor:
-            self._editor.toggle_italic()
-
-    def _on_underline(self, event: wx.CommandEvent) -> None:
-        if self._editor:
-            self._editor.toggle_underline()
-
-    def _on_strike(self, event: wx.CommandEvent) -> None:
-        if self._editor:
-            self._editor.toggle_strikethrough()
-
-    def _on_align_left(self, event: wx.CommandEvent) -> None:
-        if self._editor:
-            self._editor.apply_alignment("left")
-
-    def _on_align_center(self, event: wx.CommandEvent) -> None:
-        if self._editor:
-            self._editor.apply_alignment("center")
-
-    def _on_align_right(self, event: wx.CommandEvent) -> None:
-        if self._editor:
-            self._editor.apply_alignment("right")
-
-    def _on_align_justify(self, event: wx.CommandEvent) -> None:
-        if self._editor:
-            self._editor.apply_alignment("justify")
-
-    def _on_insert_image(self, event: wx.CommandEvent) -> None:
-        from easypdf.ui.image_dialog import ImageDialog
-        if self._editor is None:
-            return
-        with ImageDialog(self._parent) as dlg:
-            if dlg.ShowModal() == wx.ID_OK:
-                path, alt_text = dlg.get_result()
-                self._editor.insert_image(path, alt_text)
-
-    # ------------------------------------------------------------------
-    # Sync controls to caret position
-    # ------------------------------------------------------------------
-
-    def sync_to_editor(self) -> None:
-        """Update toolbar controls to reflect formatting at the current caret."""
-        if self._editor is None:
-            return
-        self._updating = True
-        try:
-            style = self._editor.current_paragraph_style()
-            if style in _PARA_STYLES:
-                self._style_choice.SetSelection(_PARA_STYLES.index(style))
-
-            if self._editor.ctrl is not None:
-                # RICHEDIT path — read attribute directly from caret pos
-                ip   = self._editor.ctrl.GetInsertionPoint()
-                attr = wx.TextAttr()
-                if self._editor.ctrl.GetStyle(ip, attr):
-                    pt = attr.GetFontPointSize()
-                    if pt and pt != self._size_ctrl.GetValue():
-                        self._size_ctrl.SetValue(pt)
-
-                    if attr.HasFontWeight():
-                        self.ToggleTool(self._id_bold,
-                                        attr.GetFontWeight() == wx.FONTWEIGHT_BOLD)
-                    if attr.HasFontStyle():
-                        self.ToggleTool(self._id_italic,
-                                        attr.GetFontStyle() == wx.FONTSTYLE_ITALIC)
-                    if attr.HasFontUnderlined():
-                        self.ToggleTool(self._id_underline, attr.GetFontUnderlined())
+class EditorToolBar(wx.ToolBar):
+    def __init__(self, frame, id_of, show_labels=True):
+        style = wx.TB_HORIZONTAL | wx.TB_FLAT
+        if show_labels:
+            style |= wx.TB_TEXT
+        super().__init__(frame, style=style)
+        self.frame = frame
+        self.id_of = id_of
+        self.show_labels = bool(show_labels)
+        self._tools = {}
+        self._syncing = False
+        size = int(round(20 * frame.GetDPIScaleFactor()))
+        self.SetToolBitmapSize(wx.Size(size, size))
+        self._size = size
+        for item in LAYOUT:
+            if item is None:
+                self.AddSeparator()
+            elif item == "style":
+                self._add_style_choice()
             else:
-                # WebEditor — character state was reported via JS bridge
-                state = getattr(self._editor, "_char_state", {})
-                self.ToggleTool(self._id_bold,      bool(state.get("bold")))
-                self.ToggleTool(self._id_italic,    bool(state.get("italic")))
-                self.ToggleTool(self._id_underline, bool(state.get("underline")))
-                self.ToggleTool(self._id_strike,    bool(state.get("strikethrough")))
+                self._add_tool(item)
+        self.Realize()
+        self.Bind(wx.EVT_SYS_COLOUR_CHANGED, self._on_colours)
 
-            # Alignment radio group
-            align = self._editor.current_alignment()
-            self.ToggleTool(self._id_align_left,    align == "left")
-            self.ToggleTool(self._id_align_center,  align == "center")
-            self.ToggleTool(self._id_align_right,   align == "right")
-            self.ToggleTool(self._id_align_justify, align == "justify")
+    def needed_width(self):
+        """The width every tool needs, as laid out. Measured 2026-09-09: with
+        labels at 150 percent the bar is about 1950 pixels, wider than a
+        1920 pixel display even maximised, so the last tools were clipped.
+        The window compares this with its client width and rebuilds the
+        bar without labels when they do not fit (the labels stay in the
+        tooltips and the accessible names)."""
+        return self.GetBestSize().width
 
+    def _add_tool(self, action):
+        entry = keymap.entry(action)
+        label = entry.plain_label.rstrip(".")
+        short = {"insert_link": "Link", "insert_picture": "Picture",
+                 "insert_table": "Table", "export_pdf": "Export PDF",
+                 "align_left": "Left", "align_center": "Centre",
+                 "align_right": "Right", "align_justify": "Justify",
+                 "strike": "Strike", "bullets": "Bullets", "numbers": "Numbers",
+                 "normal": "Normal"}.get(action, label)
+        kind = wx.ITEM_CHECK if entry.kind == "check" else wx.ITEM_NORMAL
+        tip = label + (" (%s)" % entry.primary if entry.primary else "")
+        tool = self.AddTool(self.id_of(action), short, icons.draw(action, self._size),
+                            shortHelp=tip, kind=kind)
+        self._tools[action] = tool
+
+    def _add_style_choice(self):
+        self.style = wx.Choice(self, choices=[s[0] for s in STYLES])
+        self.style.SetSelection(0)
+        self.style.SetName("Paragraph style")
+        self.style.SetToolTip("Paragraph style. Ctrl+Alt+1 to 6 for headings, "
+                              "Ctrl+Alt+0 normal text, Ctrl+Alt+8 bullets, "
+                              "Ctrl+Alt+9 numbers, Ctrl+Q quote.")
+        self.style.Bind(wx.EVT_CHOICE, self._on_style)
+        # A choice on a toolbar has no static in front of it, so it gets an
+        # accessible object of its own.
+        from .dialogs import name_field
+        name_field(self.style, "Paragraph style")
+        self.AddControl(self.style, "Paragraph style")
+
+    def _on_style(self, _event):
+        if self._syncing:
+            return
+        index = self.style.GetSelection()
+        if index < 0:
+            return
+        action = STYLES[index][1]
+        handler = getattr(self.frame, "on_" + action, None)
+        if handler is not None:
+            handler(None)
+            self.frame.editor.focus()
+
+    def _on_colours(self, event):
+        for action, tool in self._tools.items():
+            try:
+                self.SetToolNormalBitmap(tool.GetId(), icons.draw(action, self._size))
+            except Exception:
+                pass
+        self.Refresh()
+        event.Skip()
+
+    # ------------------------------------------------------------ state --
+    def sync(self, state):
+        """Reflect the editor's selection state. Called on every state message."""
+        self._syncing = True
+        try:
+            for action in ("bold", "italic", "underline", "strike"):
+                tool = self._tools.get(action)
+                if tool is not None:
+                    self.ToggleTool(tool.GetId(), bool(state.get(action)))
+            block = state.get("block") or "p"
+            if state.get("quote") and block == "p":
+                block = "blockquote"
+            for index, (_label, _action, blocks) in enumerate(STYLES):
+                if block in blocks:
+                    if self.style.GetSelection() != index:
+                        self.style.SetSelection(index)
+                    break
         finally:
-            self._updating = False
+            self._syncing = False

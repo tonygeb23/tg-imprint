@@ -1,806 +1,1990 @@
+"""The Easy PDF window.
+
+`create_frame(open_path=None)` is what main.py calls. The frame owns one
+document, one WebView2 editor (web_editor.EditorView), the menus and the
+toolbar generated from keymap.py, a status bar whose first field is wide
+enough for a sentence, and the three speech channels CONVENTIONS.md asks
+for. Everything slow (open, save, import, export, checking, the update
+check) runs on a thread and comes back through wx.CallAfter.
+
+The contract with main.py, from docs/briefs/worker-b.md:
+
+- announce(text), announce_help(text), announce_answer(text): spoken as the
+  speech level says; the status bar always.
+- The update flow, copied from Drop Deck: a background check about four
+  seconds after start, Help then Check for updates, the download dialog,
+  then Velopack applies it and restarts the app. Every branch answers in a
+  dialog.
+- open_document(path): the unsaved changes prompt, then the load, scheduled
+  with wx.CallAfter so the second launch's WM_COPYDATA returns at once.
+- Crash recovery reads paths.PREVIOUS_RUN_CRASHED; the frame closes
+  normally and never calls os._exit.
+
+Worker A's modules (docfile, htmlclean, pdfexport, pdfcheck, pdfimport,
+pdfengine) and Worker C's (describe_dialog) are imported lazily inside the
+methods that use them, so this module loads and its tests run before they
+exist; where one is missing the user gets a status line, not a crash.
 """
-Main application window for Easy PDF.
-
-Accessibility design notes
---------------------------
-NVDA focus mode activates automatically when the RICHEDIT control is
-focused (it's a native edit control).  The status bar (panes 0-3) is
-readable with NVDA+End.  All menus are navigable with standard
-Windows menu keys — NVDA announces every menu item label and shortcut.
-
-Complete keyboard map (also in Help → Keyboard Shortcuts):
-  Ctrl+B / Ctrl+Shift+I / Ctrl+U   Bold / Italic / Underline
-  Ctrl+Shift+K                      Strikethrough
-  Ctrl+L / Ctrl+E / Ctrl+R / Ctrl+J Align Left / Center / Right / Justify
-  Ctrl+Alt+1-6                      Heading 1-6
-  Ctrl+Alt+0                        Normal paragraph
-  Ctrl+Alt+8 / 9                    Bullet / Numbered list
-  Ctrl+Q                            Block quote
-  Ctrl+Shift+F                      Font dialog
-  Ctrl+I                            Insert image
-  Ctrl+F / Ctrl+H                   Find / Find & Replace
-  F6 / Shift+F6                     Next / Previous heading
-  Alt+F6                            Document structure navigator
-  Ctrl+P                            Print (exports PDF and opens in viewer)
-  Ctrl+E                            (see above — Align Center)
-  Ctrl+Shift+E                      Export PDF
-"""
-from __future__ import annotations
-
+import base64
+import hashlib
 import os
+import re
+import subprocess
 import sys
 import tempfile
-import subprocess
+import threading
+import time
+import urllib.request
+import webbrowser
+from html import escape
+
 import wx
 
-from easypdf.ui.editor import Editor
-from easypdf.ui.web_editor import WebEditor
-from easypdf.ui.toolbar import FormattingToolbar
-from easypdf.ui.image_dialog import ImageDialog
-from easypdf.ui.hyperlink_dialog import HyperlinkDialog
-from easypdf.ui.find_replace_dialog import FindReplaceDialog
-from easypdf.ui.doc_properties_dialog import DocPropertiesDialog
-from easypdf.ui.structure_panel import StructureNavigator
-from easypdf.core.rtc_parser import parse_document
-from easypdf.core.pdf_export import export_pdf, export_html_to_pdf
-from easypdf.core.pdf_validator import validate_pdf
+from .. import appicon
+from .. import constants as C
+from .. import paths
+from .. import speech
+from .. import updatedialog
+from ..settings import Settings
+from . import dialogs
+from . import keymap
+from . import toolbar as toolbar_mod
+from .web_editor import EditorView, EVT_EDITOR_MESSAGE, sanitise
+
+#: docs/STRINGS.md, Worker B. Every sentence the window shows or speaks.
+S = {
+    "first_run": ("Welcome to Easy PDF. Start typing. F1 lists the keys and "
+                  "Ctrl+Shift+E makes the PDF."),
+    "words": "%s words",
+    "one_word": "1 word",
+    "no_words": "No words yet",
+    "untitled": "Untitled",
+    "style_normal": "Normal text",
+    "style_heading": "Heading %d",
+    "style_bullet": "Bullet list item",
+    "style_number": "Numbered list item",
+    "style_quote": "Quote",
+    "style_cell": "Table cell",
+    "style_header_cell": "Table header cell",
+    "style_picture": "Picture: %s",
+    "style_picture_none": "Picture without a description",
+    "style_picture_decorative": "Decorative picture",
+    "in_link": ", in a link",
+    "bold_on": "Bold on", "bold_off": "Bold off",
+    "italic_on": "Italic on", "italic_off": "Italic off",
+    "underline_on": "Underline on", "underline_off": "Underline off",
+    "strike_on": "Strikethrough on", "strike_off": "Strikethrough off",
+    "code_on": "Code on", "code_off": "Code off",
+    "code_nothing": "Select the text to make into code first.",
+    "list_on_bullets": "Bullet list", "list_on_numbers": "Numbered list",
+    "list_off": "List removed",
+    "quote_on": "Quote", "quote_off": "Quote removed",
+    "align": {"left": "Aligned left", "center": "Centred", "right": "Aligned right",
+              "justify": "Justified"},
+    "indent": "List level increased", "outdent": "List level decreased",
+    "next_cell": "Next cell", "previous_cell": "Previous cell", "row_added": "Row added",
+    "zoom": "Zoom %d percent",
+    "heading_at": "Heading %d: %s",
+    "no_more_headings": "No more headings",
+    "no_headings_before": "No headings before this",
+    "undo": "Undo", "redo": "Redo", "cut": "Cut", "copied": "Copied",
+    "selected_all": "All selected",
+    "pasted": "Pasted.",
+    "pasted_with_notes": "Pasted. %s",
+    "nothing_to_paste": "Nothing on the clipboard to paste.",
+    "picture_pasted": "Picture pasted. It needs a description.",
+    "new_document": "New document.",
+    "opened": "Opened %s.",
+    "opened_from": "Opened from %s. Save will write an Easy PDF document.",
+    "opening": "Opening %s.",
+    "open_failed": "Could not open %s. %s",
+    "saved": "Saved %s.",
+    "saving": "Saving %s.",
+    "save_failed": "Could not save %s. %s",
+    "web_page_saved": "Saved the web page %s.",
+    "closed": "Document closed.",
+    "modified_marker": "",
+    "export_title_needed": "The PDF needs a title first.",
+    "export_cancelled": "Export cancelled: a title is needed.",
+    "exporting": "Making the PDF.",
+    "export_start": "Making %s.",
+    "export_done": "PDF written: %s",
+    "export_failed": "The PDF could not be made. %s",
+    "export_no_engine": ("No PDF engine was found. %s The document can still be saved "
+                         "as a web page from the File menu."),
+    "pdfua_claimed": "The PDF/UA identifier was written: every check passed.",
+    "pdfua_not_claimed": ("The PDF was written without the PDF/UA claim. %s"),
+    "export_module_missing": "The PDF export is not part of this build yet.",
+    "check_module_missing": "The accessibility checker is not part of this build yet.",
+    "import_module_missing": "Opening %s files is not part of this build yet.",
+    "docfile_missing": ("The document module is not part of this build yet, so this "
+                        "file was read without it."),
+    "describer_missing": "The describer is not part of this build yet.",
+    "printing": "Sending the PDF to the printer.",
+    "printed": "The PDF was sent to the printer.",
+    "print_fallback": ("No printer would take the PDF, so it has been opened instead. "
+                       "Print it from there."),
+    "checking": "Checking %s.",
+    "check_done": "Checked %s.",
+    "check_failed": "The PDF could not be checked. %s",
+    "no_picture_here": "No picture at the caret. Ctrl+Shift+Alt+P lists every picture.",
+    "no_object_here": "No picture or empty table at the caret.",
+    "picture_updated": "Picture updated.",
+    "picture_inserted": "Picture inserted.",
+    "picture_removed": "Picture removed.",
+    "table_removed": "Table removed.",
+    "remove_picture_q": ("Remove this picture from the document?\n\nDescription: %s\n\n"
+                         "Ctrl+Z puts it back."),
+    "remove_table_q": "Remove this empty table from the document? Ctrl+Z puts it back.",
+    "description_added": "Description added.",
+    "link_inserted": "Link inserted.",
+    "link_updated": "Link updated.",
+    "table_inserted": "Table inserted, %d rows and %d columns. The caret is in the first cell.",
+    "title_set": "Title set to %s.",
+    "title_prompt": "Document title:",
+    "properties_applied": "Document properties applied.",
+    "pictures_need_alt": "%d picture%s need%s a description.",
+    "pictures_offer": ("%d picture%s in this document ha%s no description. Open the "
+                       "Pictures list now to add them?"),
+    "no_pictures": "No pictures in the document.",
+    "no_headings": "No headings in the document yet.",
+    "heading_jump": "Heading %d: %s",
+    "find_nothing": "Type something to find.",
+    "found": "Found. %s",
+    "not_found": "Not found.",
+    "guide_missing": "The user guide is not published yet.",
+    "guide_opening": "Opening the user guide in your browser.",
+    "donate_opening": "Opening the donate page in your browser.",
+    "checking_updates": "Checking for a new version.",
+    "newest_version": "You have the newest version.",
+    "update_skipped": "Update skipped. Help, check for updates when you are ready.",
+    "downloading": "Downloading version %s.",
+    "download_stopped": "The download was stopped. Nothing was changed.",
+    "download_failed": "Download failed. %s",
+    "updating": "Updating. %s will close and open again by itself.",
+    "updated_to": "Updated to version %s.",
+    "recovered": "Recovered %s. Save it somewhere safe.",
+    "snapshots_deleted": "The recovered documents were deleted.",
+    "autosaved": "Autosaved.",
+    "about": ("%s %s\n%s\n\n%s\n\nPDF engine: %s\nUpdates: %s\n\nA TG Studios program. "
+              "Questions and reports to %s. Tested with NVDA.\n\n%s"),
+    "engine_none": "none found. Install Microsoft Edge or Google Chrome to make PDFs.",
+    "engine_unknown": "not checked (the engine module is not part of this build yet).",
+    "context_menu_no_page": "",
+    "check_report_title": "Accessibility check",
+    "export_report_title": "PDF written",
+    "open_notes_title": "Notes from opening this file",
+}
+
+UPDATE_CHECK_DELAY_MS = 4000
+AUTOSAVE_MS = C.AUTOSAVE_SECONDS * 1000
 
 
-class MainWindow(wx.Frame):
-    def __init__(self, parent, title="Easy PDF", use_web_editor: bool = False):
-        super().__init__(parent, title=title, size=(1040, 740))
-        self._use_web_editor = use_web_editor
-        self._current_file  = None
-        self._last_pdf_path = None   # most recently exported PDF
-        self._modified      = False
-        self._doc_props     = {"title": "", "author": "", "lang": "en-US"}
-        self._find_dlg      = None
-        self._structure_nav = None
+def create_frame(open_path=None):
+    """What main.py calls. Builds the window, shows nothing itself."""
+    return MainFrame(open_path=open_path)
 
-        self._build_menu()
-        self._build_toolbar()
-        self._build_editor()
-        self._toolbar.set_editor(self._editor)
-        self._build_status_bar()
-        self._build_accelerators()
 
-        self.Centre()
+class MainFrame(wx.Frame):
+    def __init__(self, open_path=None, settings=None):
+        super().__init__(None, title=C.APP_NAME)
+        self.settings = settings if settings is not None else Settings()
+        if settings is None:
+            self.settings_state = self.settings.load()
+        else:
+            self.settings_state = "given"
+        self.speaker = speech.Speaker()
+        self._hints_said = set()
+        self.SetIcons(appicon.bundle())
 
-    # ------------------------------------------------------------------
-    # Menu
-    # ------------------------------------------------------------------
+        # The document.
+        self.path = None                 # the .epdf path once saved
+        self.source_path = None          # what was opened, native or not
+        self.imported_from = ""          # "Word", "Markdown"... else ""
+        self.meta = self._new_meta()
+        self.modified = False
+        self.snapshot_path = None
+        self._snapshot_hash = None
+        self.state = {}
+        self.find_text = ""
+        self.find_match_case = False
+        self.find_dialog = None
+        self.last_folder = self.settings.get("last_folder") or ""
+        self._guide_available = None
+        self._update_box = None
+        self._restart_body = None
+        self._closing = False
 
-    def _build_menu(self):
-        mb = wx.MenuBar()
+        # Ids and menus from the one list.
+        self._ids = {}
+        self._action_of = {}
+        for entry in keymap.ENTRIES:
+            wid = wx.NewIdRef()
+            self._ids[entry.action] = wid
+            self._action_of[int(wid)] = entry.action
+        self._recent_ids = [wx.NewIdRef() for _ in range(C.RECENT_FILES)]
+        self._menu_items = {}
+        self._build_menus()
+        self.SetAcceleratorTable(wx.AcceleratorTable(self._build_accelerators()))
+        self.Bind(wx.EVT_MENU, self._dispatch)
+        self.Bind(wx.EVT_TOOL, self._dispatch)
+        for wid in self._recent_ids:
+            self.Bind(wx.EVT_MENU, self._on_recent, id=wid)
+        self.Bind(wx.EVT_MENU_OPEN, self._on_menu_open)
 
-        # ---- File ----
-        file_menu = wx.Menu()
-        file_menu.Append(wx.ID_NEW,    "&New\tCtrl+N",             "Create a new document")
-        file_menu.Append(wx.ID_OPEN,   "&Open…\tCtrl+O",           "Open an existing RTF document")
-        file_menu.Append(wx.ID_SAVE,   "&Save\tCtrl+S",            "Save document as RTF")
-        file_menu.Append(wx.ID_SAVEAS, "Save &As…\tCtrl+Shift+S",  "Save with a new name")
-        file_menu.AppendSeparator()
-        self._mi_export = file_menu.Append(wx.ID_ANY, "&Export PDF…\tCtrl+Shift+E",
-                                           "Export as PDF/UA-1")
-        self._mi_print  = file_menu.Append(wx.ID_ANY, "&Print…\tCtrl+P",
-                                           "Print document via PDF viewer")
-        self._mi_check  = file_menu.Append(wx.ID_ANY, "Check &Accessibility…",
-                                           "Validate an exported PDF for PDF/UA-1 compliance")
-        file_menu.AppendSeparator()
-        self._mi_props  = file_menu.Append(wx.ID_ANY, "Document &Properties…",
-                                           "Set title, author, language for PDF")
-        file_menu.AppendSeparator()
-        file_menu.Append(wx.ID_EXIT, "E&xit\tAlt+F4", "Exit Easy PDF")
-        mb.Append(file_menu, "&File")
+        self.toolbar = toolbar_mod.EditorToolBar(
+            self, self.id_of, show_labels=bool(self.settings.get("toolbar_labels", True)))
+        self.SetToolBar(self.toolbar)
+        self._toolbar_widths = {self.toolbar.show_labels: self.toolbar.needed_width()}
+        self._fit_timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, lambda _e: self._fit_toolbar(), self._fit_timer)
+        self.Bind(wx.EVT_SIZE, self._on_size)
 
-        # ---- Edit ----
-        edit_menu = wx.Menu()
-        edit_menu.Append(wx.ID_UNDO,      "&Undo\tCtrl+Z")
-        edit_menu.Append(wx.ID_REDO,      "&Redo\tCtrl+Y")
-        edit_menu.AppendSeparator()
-        edit_menu.Append(wx.ID_CUT,       "Cu&t\tCtrl+X")
-        edit_menu.Append(wx.ID_COPY,      "&Copy\tCtrl+C")
-        edit_menu.Append(wx.ID_PASTE,     "&Paste\tCtrl+V")
-        edit_menu.AppendSeparator()
-        edit_menu.Append(wx.ID_SELECTALL, "Select &All\tCtrl+A")
-        edit_menu.AppendSeparator()
-        self._mi_find    = edit_menu.Append(wx.ID_ANY, "&Find…\tCtrl+F",
-                                            "Find text in document")
-        self._mi_replace = edit_menu.Append(wx.ID_ANY, "Find and &Replace…\tCtrl+H",
-                                            "Find and replace text")
-        mb.Append(edit_menu, "&Edit")
+        self.editor = EditorView(self, page=self._document_page(), lang=self.meta["lang"])
+        self.editor.Bind(EVT_EDITOR_MESSAGE, self._on_editor_message)
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        sizer.Add(self.editor, 1, wx.EXPAND)
+        self.SetSizer(sizer)
 
-        # ---- Format ----
-        fmt_menu = wx.Menu()
+        self.status = self.CreateStatusBar(4)
+        self.status.SetStatusWidths([-6, -2, -1, -1])
+        self._set_style_field({})
+        self.status.SetStatusText(S["no_words"], 2)
+        self.status.SetStatusText(self.meta["lang"], 3)
 
-        # Character formatting
-        self._id_bold      = fmt_menu.Append(wx.ID_ANY, "&Bold\tCtrl+B",          "Bold").GetId()
-        self._id_italic    = fmt_menu.Append(wx.ID_ANY, "&Italic\tCtrl+Shift+I",  "Italic").GetId()
-        self._id_underline = fmt_menu.Append(wx.ID_ANY, "&Underline\tCtrl+U",     "Underline").GetId()
-        self._id_strike    = fmt_menu.Append(wx.ID_ANY, "S&trikethrough\tCtrl+Shift+K",
-                                             "Strikethrough").GetId()
-        fmt_menu.AppendSeparator()
-
-        # Paragraph styles
-        self._id_h = {}
-        for lvl in range(1, 7):
-            item = fmt_menu.Append(
-                wx.ID_ANY,
-                f"Heading &{lvl}\tCtrl+Alt+{lvl}",
-                f"Apply Heading {lvl} paragraph style",
-            )
-            self._id_h[lvl] = item.GetId()
-        fmt_menu.AppendSeparator()
-        self._mi_normal      = fmt_menu.Append(wx.ID_ANY, "&Normal\tCtrl+Alt+0",
-                                               "Normal paragraph")
-        self._mi_bullet      = fmt_menu.Append(wx.ID_ANY, "&Bullet List\tCtrl+Alt+8",
-                                               "Bullet list item")
-        self._mi_numbered    = fmt_menu.Append(wx.ID_ANY, "N&umbered List\tCtrl+Alt+9",
-                                               "Numbered list item")
-        self._mi_blockquote  = fmt_menu.Append(wx.ID_ANY, "Block &Quote\tCtrl+Q",
-                                               "Block quote")
-        fmt_menu.AppendSeparator()
-
-        # Alignment submenu
-        align_menu = wx.Menu()
-        self._mi_align_left    = align_menu.Append(wx.ID_ANY, "Align &Left\tCtrl+L",
-                                                   "Left-align paragraph")
-        self._mi_align_center  = align_menu.Append(wx.ID_ANY, "Align &Center\tCtrl+E",
-                                                   "Center-align paragraph")
-        self._mi_align_right   = align_menu.Append(wx.ID_ANY, "Align &Right\tCtrl+R",
-                                                   "Right-align paragraph")
-        self._mi_align_justify = align_menu.Append(wx.ID_ANY, "Ali&gn Justify\tCtrl+J",
-                                                   "Justify paragraph")
-        fmt_menu.AppendSubMenu(align_menu, "&Alignment", "Paragraph text alignment")
-        fmt_menu.AppendSeparator()
-
-        # Font dialog
-        self._mi_font = fmt_menu.Append(wx.ID_ANY, "&Font…\tCtrl+Shift+F",
-                                        "Choose font face, size and style")
-        mb.Append(fmt_menu, "&Format")
-
-        # ---- Insert ----
-        ins_menu = wx.Menu()
-        self._mi_insert_image = ins_menu.Append(wx.ID_ANY, "&Image…\tCtrl+I",
-                                                "Insert image with alt text")
-        self._mi_insert_link  = ins_menu.Append(wx.ID_ANY, "&Hyperlink…\tCtrl+K",
-                                                "Insert a hyperlink (accessible link text + URL)")
-        mb.Append(ins_menu, "&Insert")
-
-        # ---- View ----
-        view_menu = wx.Menu()
-        self._mi_structure    = view_menu.Append(wx.ID_ANY,
-                                                 "Document &Structure\tAlt+F6",
-                                                 "Show document outline / heading navigator")
-        self._mi_next_heading = view_menu.Append(wx.ID_ANY, "&Next Heading\tF6",
-                                                 "Move caret to next heading")
-        self._mi_prev_heading = view_menu.Append(wx.ID_ANY, "&Previous Heading\tShift+F6",
-                                                 "Move caret to previous heading")
-        mb.Append(view_menu, "&View")
-
-        # ---- Help ----
-        help_menu = wx.Menu()
-        self._mi_shortcuts = help_menu.Append(wx.ID_ANY, "&Keyboard Shortcuts\tF1",
-                                              "Show all keyboard shortcuts")
-        help_menu.AppendSeparator()
-        help_menu.Append(wx.ID_ABOUT, "&About Easy PDF", "About this application")
-        mb.Append(help_menu, "&Help")
-
-        self.SetMenuBar(mb)
-
-        # ---- Bindings ----
-        # File
-        self.Bind(wx.EVT_MENU, self._on_new,         id=wx.ID_NEW)
-        self.Bind(wx.EVT_MENU, self._on_open,        id=wx.ID_OPEN)
-        self.Bind(wx.EVT_MENU, self._on_save,        id=wx.ID_SAVE)
-        self.Bind(wx.EVT_MENU, self._on_save_as,     id=wx.ID_SAVEAS)
-        self.Bind(wx.EVT_MENU, self._on_export_pdf,       id=self._mi_export.GetId())
-        self.Bind(wx.EVT_MENU, self._on_print,            id=self._mi_print.GetId())
-        self.Bind(wx.EVT_MENU, self._on_check_a11y,       id=self._mi_check.GetId())
-        self.Bind(wx.EVT_MENU, self._on_doc_props,        id=self._mi_props.GetId())
-        self.Bind(wx.EVT_MENU, self._on_exit,        id=wx.ID_EXIT)
-
-        # Edit
-        self.Bind(wx.EVT_MENU, self._on_undo,        id=wx.ID_UNDO)
-        self.Bind(wx.EVT_MENU, self._on_redo,        id=wx.ID_REDO)
-        self.Bind(wx.EVT_MENU, self._on_cut,         id=wx.ID_CUT)
-        self.Bind(wx.EVT_MENU, self._on_copy,        id=wx.ID_COPY)
-        self.Bind(wx.EVT_MENU, self._on_paste,       id=wx.ID_PASTE)
-        self.Bind(wx.EVT_MENU, self._on_select_all,  id=wx.ID_SELECTALL)
-        self.Bind(wx.EVT_MENU, self._on_find,        id=self._mi_find.GetId())
-        self.Bind(wx.EVT_MENU, self._on_replace,     id=self._mi_replace.GetId())
-
-        # Format — character
-        self.Bind(wx.EVT_MENU, lambda e: self._editor.toggle_bold(),          id=self._id_bold)
-        self.Bind(wx.EVT_MENU, lambda e: self._editor.toggle_italic(),        id=self._id_italic)
-        self.Bind(wx.EVT_MENU, lambda e: self._editor.toggle_underline(),     id=self._id_underline)
-        self.Bind(wx.EVT_MENU, lambda e: self._editor.toggle_strikethrough(), id=self._id_strike)
-
-        # Format — paragraph style
-        self.Bind(wx.EVT_MENU, self._on_normal_style, id=self._mi_normal.GetId())
-        self.Bind(wx.EVT_MENU, self._on_bullet,       id=self._mi_bullet.GetId())
-        self.Bind(wx.EVT_MENU, self._on_numbered,     id=self._mi_numbered.GetId())
-        self.Bind(wx.EVT_MENU, self._on_blockquote,   id=self._mi_blockquote.GetId())
-        for lvl, mid in self._id_h.items():
-            self.Bind(wx.EVT_MENU,
-                      lambda e, l=lvl: self._editor.apply_paragraph_style(f"Heading {l}"),
-                      id=mid)
-
-        # Format — alignment
-        self.Bind(wx.EVT_MENU, lambda e: self._editor.apply_alignment("left"),
-                  id=self._mi_align_left.GetId())
-        self.Bind(wx.EVT_MENU, lambda e: self._editor.apply_alignment("center"),
-                  id=self._mi_align_center.GetId())
-        self.Bind(wx.EVT_MENU, lambda e: self._editor.apply_alignment("right"),
-                  id=self._mi_align_right.GetId())
-        self.Bind(wx.EVT_MENU, lambda e: self._editor.apply_alignment("justify"),
-                  id=self._mi_align_justify.GetId())
-
-        # Format — font dialog
-        self.Bind(wx.EVT_MENU, self._on_font_dialog, id=self._mi_font.GetId())
-
-        # Insert
-        self.Bind(wx.EVT_MENU, self._on_insert_image,   id=self._mi_insert_image.GetId())
-        self.Bind(wx.EVT_MENU, self._on_insert_link,    id=self._mi_insert_link.GetId())
-
-        # View
-        self.Bind(wx.EVT_MENU, self._on_show_structure,  id=self._mi_structure.GetId())
-        self.Bind(wx.EVT_MENU, self._on_next_heading,    id=self._mi_next_heading.GetId())
-        self.Bind(wx.EVT_MENU, self._on_prev_heading,    id=self._mi_prev_heading.GetId())
-
-        # Help
-        self.Bind(wx.EVT_MENU, self._on_shortcuts,       id=self._mi_shortcuts.GetId())
-        self.Bind(wx.EVT_MENU, self._on_about,           id=wx.ID_ABOUT)
-
+        self._restore_geometry()
+        self.SetMinSize(self.FromDIP(wx.Size(640, 440)))
+        self._fit_toolbar()
+        self._update_title()
         self.Bind(wx.EVT_CLOSE, self._on_close)
 
-    def _build_toolbar(self):
-        self._toolbar = FormattingToolbar(self)
-        self.SetToolBar(self._toolbar)
+        self._autosave = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self._on_autosave_tick, self._autosave)
+        self._autosave.Start(AUTOSAVE_MS)
 
-    def _build_editor(self):
-        if self._use_web_editor:
-            self._editor = WebEditor(self)
+        wx.CallLater(UPDATE_CHECK_DELAY_MS, self._check_updates_quietly)
+        wx.CallAfter(self._after_show, open_path)
+
+    # ----------------------------------------------------------- menus --
+    def id_of(self, action):
+        return self._ids[action]
+
+    # --------------------------------------------------------- toolbar --
+    def _on_size(self, event):
+        event.Skip()
+        timer = getattr(self, "_fit_timer", None)
+        if timer is not None:
+            timer.StartOnce(150)
+
+    def _fit_toolbar(self):
+        """Labels under the icons when they fit, icons only when they do not.
+
+        Measured 2026-09-09: at 150 percent the labelled bar is wider than a
+        1920 pixel display, so its last tools were clipped even maximised.
+        The bar is rebuilt only when the answer changes; the accessible
+        names and tooltips are the same either way.
+        """
+        if not self or getattr(self, "toolbar", None) is None:
+            return
+        wanted = bool(self.settings.get("toolbar_labels", True))
+        width = self.GetClientSize().width
+        if width <= 0:
+            return
+        labelled = self._toolbar_widths.get(True)
+        if wanted and labelled is None:
+            labels = True                      # measure the labelled bar first
+        elif wanted and labelled <= width:
+            labels = True
         else:
-            self._editor = Editor(self)
-        self._editor.Bind(wx.EVT_TEXT, self._on_text_changed)
+            labels = False
+        if labels == self.toolbar.show_labels:
+            return
+        old = self.toolbar
+        self.toolbar = toolbar_mod.EditorToolBar(self, self.id_of, show_labels=labels)
+        self.SetToolBar(self.toolbar)
+        old.Destroy()
+        self._toolbar_widths[labels] = self.toolbar.needed_width()
+        self.toolbar.sync(self.state or {})
+        self.Layout()
+        if labels and self._toolbar_widths[True] > width:
+            wx.CallAfter(self._fit_toolbar)
 
-    def _build_status_bar(self):
-        self._status = self.CreateStatusBar(4)
-        # Pane 0: word count  1: current style  2: heading context  3: save state
-        self._status.SetStatusWidths([-1, 160, 200, 100])
-        self._update_status()
+    def _build_menus(self):
+        bar = wx.MenuBar()
+        for title, items in keymap.MENUS:
+            bar.Append(self._make_menu(items), title)
+        self.SetMenuBar(bar)
 
-        # Caret-tracking events only exist on the legacy RICHEDIT path.
-        # The WebEditor reports its state via JS messages instead.
-        if isinstance(self._editor, Editor):
-            self._editor.ctrl.Bind(wx.EVT_LEFT_UP, self._on_caret_moved)
-            self._editor.ctrl.Bind(wx.EVT_KEY_UP,  self._on_caret_moved)
-        else:
-            from easypdf.ui.web_editor import EVT_WEBEDITOR_STATE
-            self._editor.Bind(EVT_WEBEDITOR_STATE, self._on_caret_moved)
+    def _make_menu(self, items, remember=True):
+        menu = wx.Menu()
+        for item in items:
+            if item == "-":
+                menu.AppendSeparator()
+            elif item == "recent":
+                self.recent_menu = wx.Menu()
+                self._fill_recent()
+                menu.AppendSubMenu(self.recent_menu, "&Recent documents")
+            elif isinstance(item, tuple):
+                menu.AppendSubMenu(self._make_menu(item[1], remember), item[0])
+            else:
+                entry = keymap.entry(item)
+                kind = {"check": wx.ITEM_CHECK, "radio": wx.ITEM_RADIO}.get(entry.kind, wx.ITEM_NORMAL)
+                made = menu.Append(self.id_of(item), keymap.menu_label(entry), entry.help, kind)
+                if remember:
+                    self._menu_items.setdefault(item, []).append(made)
+        return menu
+
+    def _fill_recent(self):
+        for item in list(self.recent_menu.GetMenuItems()):
+            self.recent_menu.Delete(item)
+        recent = self.settings.recent_existing()
+        if not recent:
+            item = self.recent_menu.Append(wx.ID_ANY, "No recent documents")
+            item.Enable(False)
+            return
+        for index, path in enumerate(recent[:C.RECENT_FILES]):
+            label = "&%d %s" % (index + 1, os.path.basename(path).replace("&", "&&"))
+            self.recent_menu.Append(self._recent_ids[index], label, path)
+
+    def _on_menu_open(self, event):
+        if event.GetMenu() is not None and event.GetMenu() is self.GetMenuBar().GetMenu(0):
+            self._fill_recent()
+        event.Skip()
+
+    def _on_recent(self, event):
+        index = self._recent_ids.index(event.GetId()) if event.GetId() in self._recent_ids else -1
+        recent = self.settings.recent_existing()
+        if 0 <= index < len(recent):
+            self.open_document(recent[index])
 
     def _build_accelerators(self):
-        entries = [
-            # Character formatting
-            wx.AcceleratorEntry(wx.ACCEL_CTRL,                  ord("B"), self._id_bold),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL,                  ord("U"), self._id_underline),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("I"), self._id_italic),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("K"), self._id_strike),
-            # Alignment
-            wx.AcceleratorEntry(wx.ACCEL_CTRL, ord("L"), self._mi_align_left.GetId()),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL, ord("E"), self._mi_align_center.GetId()),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL, ord("R"), self._mi_align_right.GetId()),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL, ord("J"), self._mi_align_justify.GetId()),
-            # Font dialog
-            wx.AcceleratorEntry(wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("F"), self._mi_font.GetId()),
-            # Find
-            wx.AcceleratorEntry(wx.ACCEL_CTRL, ord("F"), self._mi_find.GetId()),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL, ord("H"), self._mi_replace.GetId()),
-            # Export / Print
-            wx.AcceleratorEntry(wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("E"), self._mi_export.GetId()),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL,                  ord("P"), self._mi_print.GetId()),
-            # Heading navigation
-            wx.AcceleratorEntry(wx.ACCEL_NORMAL, wx.WXK_F6,  self._mi_next_heading.GetId()),
-            wx.AcceleratorEntry(wx.ACCEL_SHIFT,  wx.WXK_F6,  self._mi_prev_heading.GetId()),
-            wx.AcceleratorEntry(wx.ACCEL_ALT,    wx.WXK_F6,  self._mi_structure.GetId()),
-            # Keyboard shortcuts help
-            wx.AcceleratorEntry(wx.ACCEL_NORMAL, wx.WXK_F1,  self._mi_shortcuts.GetId()),
-            # Hyperlink
-            wx.AcceleratorEntry(wx.ACCEL_CTRL, ord("K"), self._mi_insert_link.GetId()),
-        ]
-        for lvl in range(1, 7):
-            entries.append(wx.AcceleratorEntry(
-                wx.ACCEL_CTRL | wx.ACCEL_ALT, ord(str(lvl)), self._id_h[lvl]
-            ))
-        entries += [
-            wx.AcceleratorEntry(wx.ACCEL_CTRL | wx.ACCEL_ALT, ord("0"), self._mi_normal.GetId()),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL | wx.ACCEL_ALT, ord("8"), self._mi_bullet.GetId()),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL | wx.ACCEL_ALT, ord("9"), self._mi_numbered.GetId()),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL,                ord("Q"), self._mi_blockquote.GetId()),
-            wx.AcceleratorEntry(wx.ACCEL_CTRL,                ord("I"), self._mi_insert_image.GetId()),
-        ]
-        self.SetAcceleratorTable(wx.AcceleratorTable(entries))
+        """The wx table, used only when focus is outside the editor. Returned
+        as a list so tests/test_menus.py can read it back."""
+        return keymap.wx_accelerators(self.id_of)
 
-    # ------------------------------------------------------------------
-    # Status / title
-    # ------------------------------------------------------------------
+    def handler_for(self, action):
+        """The callable that performs `action`, or None."""
+        fn = getattr(self, "on_" + action, None)
+        if fn is not None:
+            return fn
+        entry = keymap.BY_ACTION.get(action)
+        if entry is not None and entry.scope == "page":
+            return lambda _event=None, a=action: self.editor.call("apply", a)
+        return None
 
-    def _update_status(self):
-        words = self._editor.word_count()
-        self._status.SetStatusText(f"Words: {words}", 0)
-        self._status.SetStatusText("Unsaved" if self._modified else "Saved", 3)
-        base = os.path.basename(self._current_file) if self._current_file else "Untitled"
-        self.SetTitle(("* " if self._modified else "") + f"{base} — Easy PDF")
+    def perform(self, action, event=None):
+        handler = self.handler_for(action)
+        if handler is not None:
+            handler(event)
 
-    def _on_caret_moved(self, event):
-        style = self._editor.current_paragraph_style()
-        self._status.SetStatusText(style, 1)
-
-        # The "current heading context" pane requires line-level inspection
-        # which only the RICHEDIT editor exposes.  WebEditor reports the
-        # current style via its selstate message, so for that path we fall
-        # back to showing just the style label.
-        if isinstance(self._editor, Editor):
-            ip  = self._editor.ctrl.GetInsertionPoint()
-            ln  = self._editor.ctrl.GetLineNumberFromPosition(ip)
-            ctx = self._find_enclosing_heading(ln)
-            self._status.SetStatusText(ctx, 2)
+    def _dispatch(self, event):
+        action = self._action_of.get(event.GetId())
+        if action:
+            self.perform(action, event)
         else:
-            self._status.SetStatusText("", 2)
-
-        self._toolbar.sync_to_editor()
-        event.Skip()
-
-    def _find_enclosing_heading(self, ln: int) -> str:
-        if not isinstance(self._editor, Editor):
-            return ""
-        for i in range(ln, -1, -1):
-            s = self._editor._style_for_line(i)
-            if s.startswith("Heading"):
-                text = self._editor.ctrl.GetLineText(i)
-                return f"In: {text[:30]}"
-        return ""
-
-    def _on_text_changed(self, event):
-        self._modified = True
-        self._update_status()
-        event.Skip()
-
-    # ------------------------------------------------------------------
-    # File
-    # ------------------------------------------------------------------
-
-    def _on_new(self, event):
-        if not self._confirm_discard():
-            return
-        self._editor.clear()
-        self._current_file = None
-        self._modified     = False
-        self._doc_props    = {"title": "", "author": "", "lang": "en-US"}
-        self._update_status()
-
-    def _doc_format(self):
-        """(extension, wildcard) for the active editor's native save format."""
-        if isinstance(self._editor, Editor):
-            return "rtf", "RTF files (*.rtf)|*.rtf"
-        return "html", "Easy PDF documents (*.html;*.epdf)|*.html;*.epdf"
-
-    def _on_open(self, event):
-        if not self._confirm_discard():
-            return
-        ext, wildcard = self._doc_format()
-        with wx.FileDialog(
-            self, "Open document",
-            wildcard=wildcard + "|All files (*.*)|*.*",
-            style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
-        ) as dlg:
-            if dlg.ShowModal() == wx.ID_OK:
-                self._load_file(dlg.GetPath())
-
-    def _on_save(self, event):
-        if self._current_file:
-            self._save_file(self._current_file)
-        else:
-            self._on_save_as(event)
-
-    def _on_save_as(self, event):
-        ext, wildcard = self._doc_format()
-        with wx.FileDialog(
-            self, "Save document as",
-            wildcard=wildcard,
-            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
-        ) as dlg:
-            if dlg.ShowModal() == wx.ID_OK:
-                path = dlg.GetPath()
-                if not path.lower().endswith("." + ext):
-                    path += "." + ext
-                self._save_file(path)
-
-    def _on_export_pdf(self, event):
-        if not self._doc_props.get("title"):
-            wx.MessageBox(
-                "Please set the document title before exporting.\n"
-                "Go to File → Document Properties.",
-                "Title required for PDF/UA",
-                wx.OK | wx.ICON_INFORMATION,
-            )
-            self._on_doc_props(None)
-            if not self._doc_props.get("title"):
-                return
-
-        default = ""
-        if self._current_file:
-            default = os.path.splitext(os.path.basename(self._current_file))[0] + ".pdf"
-        elif self._doc_props.get("title"):
-            default = self._doc_props["title"] + ".pdf"
-
-        with wx.FileDialog(
-            self, "Export as PDF",
-            defaultFile=default,
-            wildcard="PDF files (*.pdf)|*.pdf",
-            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
-        ) as dlg:
-            if dlg.ShowModal() != wx.ID_OK:
-                return
-            pdf_path = dlg.GetPath()
-            if not pdf_path.lower().endswith(".pdf"):
-                pdf_path += ".pdf"
-
-        self._do_export(pdf_path)
-
-    def _on_print(self, event):
-        if not self._doc_props.get("title"):
-            self._on_doc_props(None)
-            if not self._doc_props.get("title"):
-                return
-
-        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-        tmp.close()
-        if self._do_export(tmp.name, silent=True):
-            try:
-                if sys.platform == "win32":
-                    os.startfile(tmp.name)
-                else:
-                    subprocess.Popen(["xdg-open", tmp.name])
-            except Exception as exc:
-                wx.MessageBox(
-                    f"Could not open PDF viewer:\n{exc}\n\nFile saved at:\n{tmp.name}",
-                    "Print", wx.OK | wx.ICON_INFORMATION,
-                )
-
-    def _do_export(self, path: str, silent: bool = False) -> bool:
-        title  = self._doc_props.get("title",  "Untitled")
-        lang   = self._doc_props.get("lang",   "en-US")
-        author = self._doc_props.get("author", "")
-
-        try:
-            if isinstance(self._editor, Editor):
-                # RICHEDIT path: parse the buffer into the Document model.
-                doc = parse_document(self._editor, title=title, lang=lang, author=author)
-                export_pdf(doc, path)
-            else:
-                # WebEditor path: ship the editor's HTML straight to
-                # WeasyPrint — no Document round-trip needed.
-                body = self._editor.get_html()
-                export_html_to_pdf(body, path, title=title, lang=lang, author=author)
-
-            self._last_pdf_path = path
-            if not silent:
-                self._status.SetStatusText("PDF/UA exported", 3)
-                wx.MessageBox(f"PDF saved:\n{path}", "Export complete",
-                              wx.OK | wx.ICON_INFORMATION)
-            return True
-        except Exception as exc:
-            wx.MessageBox(f"Export failed:\n{exc}", "Export error", wx.OK | wx.ICON_ERROR)
-            return False
-
-    def _on_doc_props(self, event):
-        with DocPropertiesDialog(self, self._doc_props) as dlg:
-            if dlg.ShowModal() == wx.ID_OK:
-                self._doc_props = dlg.get_result()
-                self._modified  = True
-                self._update_status()
-
-    def _on_check_a11y(self, event):
-        """Validate an exported PDF and show an accessibility report."""
-        path = self._last_pdf_path
-        if not path or not os.path.isfile(path):
-            # Ask user to pick a PDF
-            with wx.FileDialog(
-                self, "Select PDF to check",
-                wildcard="PDF files (*.pdf)|*.pdf|All files (*.*)|*.*",
-                style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
-            ) as dlg:
-                if dlg.ShowModal() != wx.ID_OK:
-                    return
-                path = dlg.GetPath()
-
-        report = validate_pdf(path)
-        self._show_a11y_report(report)
-
-    def _show_a11y_report(self, report) -> None:
-        ok, total = report.score
-        caption = f"Accessibility Report — {ok}/{total} passed"
-
-        dlg = wx.Dialog(self, title=caption, size=(580, 420),
-                        style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
-        dlg.SetMinSize((440, 300))
-
-        txt = wx.TextCtrl(
-            dlg, value=report.format_report(),
-            style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_RICH2 | wx.HSCROLL,
-        )
-        txt.SetFont(wx.Font(10, wx.FONTFAMILY_TELETYPE,
-                            wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
-        txt.SetName("Accessibility report")
-
-        btn = wx.Button(dlg, wx.ID_OK, "Close")
-        btn.SetDefault()
-
-        sizer = wx.BoxSizer(wx.VERTICAL)
-        sizer.Add(txt, 1, wx.EXPAND | wx.ALL, 8)
-        sizer.Add(btn, 0, wx.ALIGN_RIGHT | wx.RIGHT | wx.BOTTOM, 8)
-        dlg.SetSizer(sizer)
-        dlg.Layout()
-        dlg.ShowModal()
-        dlg.Destroy()
-
-    def _on_exit(self, event):
-        self.Close()
-
-    def _on_close(self, event):
-        if self._confirm_discard():
-            for dlg in (self._find_dlg, self._structure_nav):
-                if dlg:
-                    dlg.Destroy()
             event.Skip()
 
-    # ------------------------------------------------------------------
-    # Edit
-    # ------------------------------------------------------------------
+    # --------------------------------------------------------- speaking --
+    #
+    # Three channels, all of them writing the status bar's first field:
+    #   announce()        what you cannot otherwise know: a failure, a refusal,
+    #                     a value you asked for. Silent only at "none".
+    #   announce_help()   a confirmation or a hint. Silent below "all".
+    #   announce_answer() a direct answer to a key whose only job is to answer.
+    #                     Always spoken.
+    def speech_level(self):
+        return self.settings.get("speech_level", C.DEFAULT_SPEECH_LEVEL)
 
-    # Edit-menu actions: the RICHEDIT control exposes Undo/Cut/etc. directly.
-    # The WebView surface implements them via JS exec commands.
-    def _on_undo(self, event):       self._edit_cmd("undo")
-    def _on_redo(self, event):       self._edit_cmd("redo")
-    def _on_cut(self, event):        self._edit_cmd("cut")
-    def _on_copy(self, event):       self._edit_cmd("copy")
-    def _on_paste(self, event):      self._edit_cmd("paste")
-    def _on_select_all(self, event): self._edit_cmd("selectAll")
+    def announce(self, text):
+        if self.speech_level() != C.SPEECH_NONE:
+            self.speaker.say(text)
+        self.note(text)
 
-    def _edit_cmd(self, name: str) -> None:
-        if isinstance(self._editor, Editor):
-            ctrl = self._editor.ctrl
-            {
-                "undo":      ctrl.Undo,
-                "redo":      ctrl.Redo,
-                "cut":       ctrl.Cut,
-                "copy":      ctrl.Copy,
-                "paste":     ctrl.Paste,
-                "selectAll": ctrl.SelectAll,
-            }[name]()
+    def announce_help(self, text):
+        if self.speech_level() == C.SPEECH_ALL:
+            self.speaker.say(text)
+        self.note(text)
+
+    def announce_answer(self, text):
+        self.speaker.say(text)
+        self.note(text)
+
+    def note(self, text):
+        status = getattr(self, "status", None)
+        if status is not None:
+            status.SetStatusText(text, 0)
+
+    def hint(self, key, text):
+        """A hint speaks once per session; afterwards it only lands on the bar."""
+        if key in self._hints_said:
+            self.note(text)
+            return
+        self._hints_said.add(key)
+        self.announce_help(text)
+
+    # ---------------------------------------------------------- startup --
+    def _after_show(self, open_path):
+        if not self:
+            return
+        self.editor.focus()
+        if open_path:
+            self._load_path(open_path)
+        elif paths.PREVIOUS_RUN_CRASHED:
+            self._offer_recovery()
+        elif restarted_after_update():
+            # Velopack restarted the app after an update: the flush before
+            # the restart may have left a snapshot of a modified document.
+            self._offer_recovery()
+        first_run = bool(appupdate_flag("FIRST_RUN")) or not self.settings.get("first_run_done")
+        if first_run:
+            self.settings["first_run_done"] = True
+            self.settings.save()
+            wx.CallLater(900, lambda: self.hint("first_run", S["first_run"]) if self else None)
+        updated = restarted_after_update()
+        if updated:
+            wx.CallLater(700, lambda: self.announce_help(S["updated_to"] % updated) if self else None)
+        threading.Thread(target=self._probe_guide, daemon=True, name="easypdf-guide").start()
+
+    def _probe_guide(self):
+        """Is the user guide published? A HEAD request, off the UI thread."""
+        try:
+            request = urllib.request.Request(C.USER_GUIDE_URL, method="HEAD",
+                                             headers={"User-Agent": "%s/%s" % (
+                                                 C.APP_NAME.replace(" ", ""), C.APP_VERSION)})
+            with urllib.request.urlopen(request, timeout=8) as response:
+                available = 200 <= response.status < 300
+        except Exception:
+            available = False
+        wx.CallAfter(self._guide_probed, available)
+
+    def _guide_probed(self, available):
+        if not self:
+            return
+        self._guide_available = available
+        for item in self._menu_items.get("user_guide", []):
+            item.Enable(bool(available))
+
+    def _restore_geometry(self):
+        saved = self.settings.get("window") or {}
+        # Fit the display: 1100 by 780 DIP is taller than a 1080 pixel
+        # screen at 150 percent, so the default is the smaller of that and
+        # nine tenths of the display's working area.
+        try:
+            area = wx.Display(0).GetClientArea()
+        except Exception:
+            area = wx.Rect(0, 0, 1920, 1080)
+        wanted = self.FromDIP(wx.Size(1100, 780))
+        default = wx.Size(min(wanted.width, int(area.width * 0.92)),
+                          min(wanted.height, int(area.height * 0.90)))
+        try:
+            width = min(int(saved.get("width", default.width)), area.width)
+            height = min(int(saved.get("height", default.height)), area.height)
+            self.SetSize(wx.Size(max(500, width), max(380, height)))
+            if "x" in saved and "y" in saved:
+                point = wx.Point(int(saved["x"]), int(saved["y"]))
+                display = wx.Display.GetFromPoint(point)
+                if display != wx.NOT_FOUND:
+                    self.SetPosition(point)
+                else:
+                    self.CentreOnScreen()
+            else:
+                self.CentreOnScreen()
+            if saved.get("maximised"):
+                self.Maximize(True)
+        except Exception:
+            self.SetSize(default)
+            self.CentreOnScreen()
+
+    def _save_geometry(self):
+        try:
+            rect = self.GetRect()
+            self.settings["window"] = {"x": rect.x, "y": rect.y, "width": rect.width,
+                                       "height": rect.height, "maximised": self.IsMaximized()}
+        except Exception:
+            pass
+
+    # ------------------------------------------------------- document --
+    def _new_meta(self):
+        return {"title": "", "author": self.settings.get("author", ""),
+                "lang": self.settings.get("lang", "en-US"), "subject": "",
+                "page_size": self.settings.get("page_size", C.DEFAULT_PAGE_SIZE),
+                "margin_inches": self.settings.get("margin_inches", C.DEFAULT_MARGIN_INCHES),
+                "font_family": self.settings.get("font_family", C.DEFAULT_FONT_FAMILY),
+                "font_points": self.settings.get("font_points", C.DEFAULT_FONT_POINTS)}
+
+    def _document_page(self):
+        return {"page_size": self.meta.get("page_size"),
+                "margin_inches": self.meta.get("margin_inches"),
+                "font_family": self.meta.get("font_family"),
+                "font_points": self.meta.get("font_points")}
+
+    def document_name(self):
+        if self.path:
+            return os.path.basename(self.path)
+        if self.source_path:
+            return os.path.basename(self.source_path)
+        return self.meta.get("title") or S["untitled"]
+
+    def _update_title(self):
+        self.SetTitle("%s - %s" % (self.document_name(), C.APP_NAME))
+
+    def mark_modified(self):
+        if not self.modified:
+            self.modified = True
+
+    def _apply_meta_to_page(self):
+        self.editor.set_lang(self.meta.get("lang", "en-US"))
+        self.editor.set_page(self._document_page())
+        self.status.SetStatusText(self.meta.get("lang", "en-US"), 3)
+
+    def _confirm_discard(self):
+        """True when it is safe to replace the document."""
+        if not self.modified:
+            return True
+        answer = dialogs.unsaved_changes(self, self.document_name())
+        if answer == "cancel":
+            return False
+        if answer == "discard":
+            return True
+        return self._save_now_blocking()
+
+    def _save_now_blocking(self):
+        """Save, pumping the loop until the asynchronous save finishes.
+
+        Used only from the unsaved changes prompt, where the caller has to
+        know whether it may go on. Nothing here calls the synchronous
+        RunScript; the loop is pumped until the callbacks have run.
+        """
+        outcome = {}
+        path = self.path
+        if not path:
+            path = self._ask_save_path()
+            if not path:
+                return False
+        self._save_to(path, native=True, done=lambda ok: outcome.setdefault("ok", ok))
+        deadline = time.monotonic() + 60
+        while "ok" not in outcome and time.monotonic() < deadline:
+            wx.Yield()
+            wx.MilliSleep(10)
+        return bool(outcome.get("ok"))
+
+    # -------------------------------------------------------- messages --
+    def _on_editor_message(self, event):
+        data = event.data or {}
+        kind = data.get("type")
+        if kind == "state":
+            self.state = data
+            self.toolbar.sync(data)
+            self._sync_menus(data)
+            self._set_style_field(data)
+        elif kind == "modified":
+            self.mark_modified()
+        elif kind == "words":
+            count = int(data.get("count") or 0)
+            self.status.SetStatusText(
+                S["no_words"] if count == 0 else S["one_word"] if count == 1
+                else S["words"] % "{:,}".format(count), 2)
+        elif kind == "did":
+            self._on_did(data.get("action"), data.get("result") or {})
+        elif kind == "key":
+            action = data.get("action")
+            if action == "delete_object":
+                self._confirm_remove(data.get("object"), data.get("index"))
+            elif action:
+                self.perform(action)
+        elif kind == "contextmenu":
+            self._popup_context_menu(data.get("x", 0), data.get("y", 0))
+        elif kind == "menu":
+            self._open_menu_bar(data.get("key") or "")
+        elif kind == "paste":
+            self._on_paste_message(data)
+        elif kind == "ready":
+            pass
+
+    def _sync_menus(self, state):
+        for action in ("bold", "italic", "underline", "strike", "code"):
+            for item in self._menu_items.get(action, []):
+                item.Check(bool(state.get(action)))
+        block = state.get("block") or "p"
+        if state.get("quote") and block == "p":
+            block = "blockquote"
+        style = {"p": "normal", "h1": "heading1", "h2": "heading2", "h3": "heading3",
+                 "h4": "heading4", "h5": "heading5", "h6": "heading6", "ul": "bullets",
+                 "ol": "numbers", "blockquote": "quote"}.get(block)
+        if style:
+            for item in self._menu_items.get(style, []):
+                item.Check(True)
+        align = "align_" + {"left": "left", "center": "center", "right": "right",
+                            "justify": "justify"}.get(state.get("align") or "left", "left")
+        for item in self._menu_items.get(align, []):
+            item.Check(True)
+
+    def _set_style_field(self, state):
+        block = state.get("block") or "p"
+        figure = state.get("figure")
+        if block == "figure" and figure:
+            if figure.get("decorative"):
+                text = S["style_picture_decorative"]
+            elif (figure.get("alt") or "").strip():
+                text = S["style_picture"] % figure["alt"].strip()
+            else:
+                text = S["style_picture_none"]
+        elif block == "ul":
+            text = S["style_bullet"]
+        elif block == "ol":
+            text = S["style_number"]
+        elif block == "td":
+            text = S["style_cell"]
+        elif block == "th":
+            text = S["style_header_cell"]
+        elif block in ("h1", "h2", "h3", "h4", "h5", "h6"):
+            text = S["style_heading"] % int(block[1])
+        elif block == "blockquote" or state.get("quote"):
+            text = S["style_quote"]
         else:
-            # WebEditor — use the document.execCommand API the page exposes
-            self._editor._js_call("exec", {
-                "selectAll": "selectAll",
-            }.get(name, name))
+            text = S["style_normal"]
+        if state.get("link"):
+            text += S["in_link"]
+        self.status.SetStatusText(text, 1)
 
-    def _on_find(self, event):
-        if isinstance(self._editor, Editor):
-            self._ensure_find_dlg().show_find()
+    def _on_did(self, action, result):
+        """A page side action finished; confirm it on the help channel."""
+        on = bool(result.get("on"))
+        if action in ("bold", "italic", "underline", "strike"):
+            self.announce_help(S[action + ("_on" if on else "_off")])
+        elif action == "code":
+            if result.get("nothing"):
+                self.announce(S["code_nothing"])
+            else:
+                self.announce_help(S["code_on" if on else "code_off"])
+        elif action == "normal":
+            self.announce_help(S["style_normal"])
+        elif action and action.startswith("heading"):
+            self.announce_help(S["style_heading"] % int(action[-1]))
+        elif action in ("bullets", "numbers"):
+            self.announce_help(S["list_on_" + action] if on else S["list_off"])
+        elif action == "quote":
+            self.announce_help(S["quote_on" if on else "quote_off"])
+        elif action and action.startswith("align_"):
+            self.announce_help(S["align"].get(result.get("align") or action[6:], ""))
+        elif action in ("indent", "outdent"):
+            if "moved" in result:
+                if result.get("added"):
+                    self.announce_help(S["row_added"])
+                elif result.get("moved"):
+                    self.announce_help(S["next_cell" if action == "indent" else "previous_cell"])
+            else:
+                self.announce_help(S[action])
+        elif action in ("zoom_in", "zoom_out", "zoom_reset"):
+            self.announce_help(S["zoom"] % int(result.get("percent") or 100))
+        elif action in ("next_heading", "previous_heading"):
+            if result.get("found"):
+                self.announce(S["heading_at"] % (int(result.get("level") or 0),
+                                                 result.get("text") or ""))
+            else:
+                self.announce(S["no_more_headings" if action == "next_heading"
+                                else "no_headings_before"])
+        elif action in ("undo", "redo", "cut"):
+            self.announce_help(S[action])
+        elif action == "copy":
+            self.announce_help(S["copied"])
+        elif action == "select_all":
+            self.announce_help(S["selected_all"])
+
+    # ---------------------------------------------------- context menu --
+    def _popup_context_menu(self, x, y):
+        menu = self._make_menu(keymap.CONTEXT_MENU, remember=False)
+        figure = (self.state or {}).get("figure")
+        if figure:
+            menu.AppendSeparator()
+            menu.Append(self.id_of("picture_properties"),
+                        keymap.menu_label(keymap.entry("picture_properties")))
+            menu.Append(self.id_of("describe_picture"),
+                        keymap.menu_label(keymap.entry("describe_picture")))
+            menu.Append(self.id_of("delete_object"), "Re&move picture")
+        scale = self.editor.scale()
+        point = self.editor.web.ClientToScreen(wx.Point(int(x * scale), int(y * scale)))
+        self.PopupMenu(menu, self.ScreenToClient(point))
+        menu.Destroy()
+        self.editor.focus()
+
+    def on_context_menu(self, _event=None):
+        """The wx side of the Applications key, for focus outside the editor."""
+        self._popup_context_menu(20, 20)
+
+    def _open_menu_bar(self, key):
+        """Alt, F10 or Alt+letter from inside the editor.
+
+        WebView2 keeps those from the frame (measured: Alt+F reached the
+        page and no menu opened), so the page forwards them and this does
+        what DefWindowProc would have done: WM_SYSCOMMAND with SC_KEYMENU
+        and the mnemonic, which opens that menu, or the menu bar when the
+        key is empty.
+        """
+        import ctypes
+        WM_SYSCOMMAND, SC_KEYMENU = 0x0112, 0xF100
+        try:
+            ctypes.windll.user32.PostMessageW(int(self.GetHandle()), WM_SYSCOMMAND, SC_KEYMENU,
+                                              ord(key[:1].lower()) if key else 0)
+        except Exception:
+            pass
+
+    # ----------------------------------------------------------- paste --
+    def _on_paste_message(self, data):
+        if data.get("image"):
+            self._insert_pasted_picture(data["image"])
+            return
+        html = data.get("html") or ""
+        text = data.get("text") or ""
+        if not html and not text:
+            self.announce(S["nothing_to_paste"])
+            return
+        self._paste_content(html, text)
+
+    def _paste_content(self, html, text):
+        if not html and text:
+            html = text_to_html(text)
+        warnings = self.editor.insert_html(html)
+        self.mark_modified()
+        if warnings:
+            self.announce(S["pasted_with_notes"] % warnings[0])
         else:
-            self._show_web_find(replace=False)
+            self.announce_help(S["pasted"])
 
-    def _on_replace(self, event):
-        if isinstance(self._editor, Editor):
-            self._ensure_find_dlg().show_replace()
+    def on_paste(self, _event=None):
+        """Edit, Paste: wx's clipboard, HTML if there is any, then the same path."""
+        html = text = ""
+        picture = None
+        try:
+            if wx.TheClipboard.Open():
+                try:
+                    if wx.TheClipboard.IsSupported(wx.DataFormat(wx.DF_HTML)):
+                        data = wx.HTMLDataObject()
+                        if wx.TheClipboard.GetData(data):
+                            html = data.GetHTML()
+                    if wx.TheClipboard.IsSupported(wx.DataFormat(wx.DF_BITMAP)) and not html:
+                        data = wx.BitmapDataObject()
+                        if wx.TheClipboard.GetData(data):
+                            picture = data.GetBitmap()
+                    if wx.TheClipboard.IsSupported(wx.DataFormat(wx.DF_UNICODETEXT)):
+                        data = wx.TextDataObject()
+                        if wx.TheClipboard.GetData(data):
+                            text = data.GetText()
+                finally:
+                    wx.TheClipboard.Close()
+        except Exception:
+            pass
+        if picture is not None and picture.IsOk() and not html and not text:
+            stream = wx.MemoryOutputStream()
+            picture.ConvertToImage().SaveFile(stream, wx.BITMAP_TYPE_PNG)
+            raw = bytes(stream.GetOutputStreamBuffer().GetBufferStart()[:stream.GetLength()]) \
+                if hasattr(stream, "GetOutputStreamBuffer") else None
+            if raw is None:
+                buf = bytearray(stream.GetLength())
+                stream.CopyTo(buf, len(buf))
+                raw = bytes(buf)
+            self._insert_pasted_picture("data:image/png;base64," + base64.b64encode(raw).decode("ascii"))
+            return
+        if html:
+            html = clipboard_html_fragment(html)
+        if not html and not text:
+            self.announce(S["nothing_to_paste"])
+            return
+        self._paste_content(html, text)
+
+    def _insert_pasted_picture(self, data_url):
+        from .image_dialog import data_uri_bytes
+        raw = data_uri_bytes(data_url)
+        if not raw:
+            self.announce(S["nothing_to_paste"])
+            return
+        src = data_url
+        try:
+            from .. import docfile
+            got = docfile.embed_image(raw)
+            src = got.data_uri
+        except ImportError:
+            pass
+        except Exception as exc:
+            self.announce(S["open_failed"] % ("the picture", exc))
+            return
+        spec = {"src": src, "alt": "", "decorative": False, "caption": "",
+                "width": "half", "place": "centre", "altSource": ""}
+
+        def inserted(value, _error):
+            self.mark_modified()
+            self.announce(S["picture_pasted"])
+            index = (value or {}).get("index")
+            if index is not None:
+                wx.CallAfter(self._edit_figure, int(index), spec)
+
+        self.editor.call("insertFigure", spec, callback=inserted)
+
+    # --------------------------------------------------------- actions --
+    def on_new(self, _event=None):
+        if not self._confirm_discard():
+            return
+        self._discard_snapshot()
+        self.path = None
+        self.source_path = None
+        self.imported_from = ""
+        self.meta = self._new_meta()
+        self.modified = False
+        self._apply_meta_to_page()
+        self.editor.load_clean_body("<p><br></p>")
+        self._update_title()
+        self.announce_help(S["new_document"])
+        self.editor.focus()
+
+    def on_close_document(self, _event=None):
+        if not self._confirm_discard():
+            return
+        self.on_new()
+        self.announce_help(S["closed"])
+
+    def on_open(self, _event=None):
+        if not self._confirm_discard():
+            return
+        with wx.FileDialog(self, "Open a document", defaultDir=self.last_folder or paths.documents_dir(),
+                           wildcard=C.OPEN_WILDCARD,
+                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as dialog:
+            if dialog.ShowModal() != wx.ID_OK:
+                return
+            path = dialog.GetPath()
+        self._load_path(path)
+
+    def open_document(self, path):
+        """A second launch, or Recent. Returns at once; the work is deferred."""
+        wx.CallAfter(self._open_with_prompt, path)
+
+    def _open_with_prompt(self, path):
+        if not self:
+            return
+        self.Raise()
+        if not self._confirm_discard():
+            return
+        self._load_path(path)
+
+    def _load_path(self, path):
+        path = os.path.abspath(path)
+        name = os.path.basename(path)
+        kind = kind_of(path)
+        self.last_folder = os.path.dirname(path)
+        self.announce_help(S["opening"] % name)
+        busy = None
+        if kind == "pdf":
+            busy = dialogs.BusyDialog(self, self, "Opening a PDF", S["opening"] % name)
+            busy.Show()
+
+        def work():
+            try:
+                body, meta, warnings = read_document(path, kind,
+                                                     progress=(busy.step if busy else None))
+                clean, more = sanitise(body)
+                warnings = list(warnings) + list(more)
+                wx.CallAfter(self._loaded, path, kind, clean, meta, warnings, busy)
+            except Exception as exc:
+                wx.CallAfter(self._load_failed, path, exc, busy)
+
+        threading.Thread(target=work, daemon=True, name="easypdf-open").start()
+
+    def _load_failed(self, path, exc, busy):
+        if busy:
+            busy.finish()
+        message = S["open_failed"] % (os.path.basename(path), exc)
+        self.announce(message)
+        dialogs.show_text(self, "Could not open", message)
+        self.editor.focus()
+
+    def _loaded(self, path, kind, clean, meta, warnings, busy):
+        if busy:
+            busy.finish()
+        self._discard_snapshot()
+        self.meta = self._new_meta()
+        for key in ("title", "author", "lang", "subject", "page_size", "margin_inches"):
+            value = (meta or {}).get(key)
+            if value not in (None, ""):
+                self.meta[key] = value
+        source_kind = (meta or {}).get("source_kind") or ("" if kind == "native" else kind)
+        if kind == "native":
+            self.path = path
+            self.source_path = path
+            self.imported_from = ""
+            self.modified = False
         else:
-            self._show_web_find(replace=True)
-
-    def _ensure_find_dlg(self) -> FindReplaceDialog:
-        if not self._find_dlg:
-            self._find_dlg = FindReplaceDialog(self, self._editor.ctrl)
-        return self._find_dlg
-
-    def _show_web_find(self, replace: bool) -> None:
-        from easypdf.ui.web_find_dialog import WebFindDialog
-        if not self._find_dlg:
-            self._find_dlg = WebFindDialog(self, self._editor)
-        if replace:
-            self._find_dlg.show_replace()
+            self.path = None
+            self.source_path = path
+            self.imported_from = source_name(source_kind or kind)
+            self.modified = True
+        self.settings.remember(path)
+        self.settings["last_folder"] = self.last_folder
+        self.settings.save()
+        self._apply_meta_to_page()
+        self._update_title()
+        self.editor.load_clean_body(clean, callback=lambda _v, _e: self.editor.focus())
+        if self.imported_from:
+            self.announce(S["opened_from"] % self.imported_from)
         else:
-            self._find_dlg.show_find()
+            self.announce_help(S["opened"] % os.path.basename(path))
+        needing = count_pictures_needing_alt(clean)
+        if warnings:
+            dialogs.show_text(self, S["open_notes_title"], "\n".join(warnings), field_label="&Notes")
+        if needing:
+            plural = "" if needing == 1 else "s"
+            self.announce(S["pictures_need_alt"] % (needing, plural, "s" if needing == 1 else ""))
+            if dialogs.ask(self, "Pictures without descriptions",
+                           S["pictures_offer"] % (needing, plural, "s" if needing == 1 else "ve"),
+                           yes="&Open the Pictures list", no="&Not now"):
+                self.on_pictures()
+        self.editor.focus()
 
-    # ------------------------------------------------------------------
-    # Format
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------ save --
+    def _ask_save_path(self, web=False):
+        default = self.path or self.source_path
+        if default:
+            name = os.path.splitext(os.path.basename(default))[0]
+        else:
+            name = safe_filename(self.meta.get("title") or S["untitled"])
+        ext = ".html" if web else C.DOC_EXTENSION
+        with wx.FileDialog(self, "Save as web page" if web else "Save as",
+                           defaultDir=self.last_folder or paths.documents_dir(),
+                           defaultFile=name + ext,
+                           wildcard=C.WEB_PAGE_WILDCARD if web else C.DOC_WILDCARD,
+                           style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as dialog:
+            if dialog.ShowModal() != wx.ID_OK:
+                return None
+            path = dialog.GetPath()
+        if not path.lower().endswith(ext):
+            path += ext
+        self.last_folder = os.path.dirname(path)
+        return path
 
-    def _on_normal_style(self, event):  self._editor.apply_paragraph_style("Normal")
-    def _on_bullet(self, event):        self._editor.apply_paragraph_style("Bullet List")
-    def _on_numbered(self, event):      self._editor.apply_paragraph_style("Numbered List")
-    def _on_blockquote(self, event):    self._editor.apply_paragraph_style("Block Quote")
+    def on_save(self, _event=None):
+        if self.path:
+            self._save_to(self.path, native=True)
+        else:
+            self.on_save_as()
 
-    def _on_font_dialog(self, event):
-        """Open the system font dialog and apply the chosen font to the selection."""
-        if self._editor.ctrl is None:
-            # WebEditor — drive execCommand fontName / fontSize directly.
-            fd = wx.FontData()
-            fd.EnableEffects(True)
-            with wx.FontDialog(self, fd) as dlg:
-                if dlg.ShowModal() != wx.ID_OK:
+    def on_save_as(self, _event=None):
+        path = self._ask_save_path()
+        if path:
+            self._save_to(path, native=True)
+
+    def on_save_web_page(self, _event=None):
+        path = self._ask_save_path(web=True)
+        if path:
+            self._save_to(path, native=False)
+
+    def _save_to(self, path, native, done=None):
+        name = os.path.basename(path)
+        self.announce_help(S["saving"] % name)
+        meta = dict(self.meta)
+
+        def got(body, error):
+            if error or body is None:
+                message = S["save_failed"] % (name, error or "the document could not be read back")
+                self.announce(message)
+                if done:
+                    done(False)
+                return
+
+            def work():
+                try:
+                    write_document(path, body, meta)
+                    wx.CallAfter(self._saved, path, native, done)
+                except Exception as exc:
+                    wx.CallAfter(self._save_failed, path, exc, done)
+
+            threading.Thread(target=work, daemon=True, name="easypdf-save").start()
+
+        self.editor.get_body(got)
+
+    def _saved(self, path, native, done):
+        name = os.path.basename(path)
+        if native:
+            self.path = path
+            self.source_path = path
+            self.imported_from = ""
+            self.modified = False
+            self._discard_snapshot()
+            self._update_title()
+            self.announce_help(S["saved"] % name)
+        else:
+            self.announce_help(S["web_page_saved"] % name)
+        self.settings.remember(path)
+        self.settings["last_folder"] = self.last_folder
+        self.settings.save()
+        if done:
+            done(True)
+
+    def _save_failed(self, path, exc, done):
+        message = S["save_failed"] % (os.path.basename(path), exc)
+        self.announce(message)
+        dialogs.show_text(self, "Could not save", message)
+        if done:
+            done(False)
+
+    # ---------------------------------------------------------- export --
+    def _ensure_title(self, then):
+        """The PDF needs a title; open the properties with focus in it."""
+        if (self.meta.get("title") or "").strip():
+            then()
+            return
+        self.announce(S["export_title_needed"])
+        if self._edit_properties(focus="title") and (self.meta.get("title") or "").strip():
+            then()
+        else:
+            self.announce(S["export_cancelled"])
+
+    def on_export_pdf(self, _event=None):
+        self._ensure_title(self._export_after_title)
+
+    def _export_after_title(self):
+        default = safe_filename(self.meta.get("title") or self.document_name()) + ".pdf"
+        with wx.FileDialog(self, "Export PDF", defaultDir=self.last_folder or paths.documents_dir(),
+                           defaultFile=default, wildcard=C.PDF_WILDCARD,
+                           style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as dialog:
+            if dialog.ShowModal() != wx.ID_OK:
+                return
+            out = dialog.GetPath()
+        if not out.lower().endswith(".pdf"):
+            out += ".pdf"
+        self.last_folder = os.path.dirname(out)
+        self._export_to(out, self._export_finished)
+
+    def _export_to(self, out, finished):
+        try:
+            from .. import pdfexport
+        except ImportError:
+            self.announce(S["export_module_missing"])
+            return
+        busy = dialogs.BusyDialog(self, self, "Making the PDF", S["export_start"] % os.path.basename(out))
+        busy.Show()
+        meta = dict(self.meta)
+
+        def got(body, error):
+            if error or body is None:
+                busy.finish()
+                self.announce(S["export_failed"] % (error or "the document could not be read back"))
+                return
+
+            def work():
+                try:
+                    result = pdfexport.export_html(body, out, meta, progress=busy.step)
+                    report = ""
+                    try:
+                        from .. import pdfcheck
+                        report = pdfcheck.check(out).format_report()
+                    except ImportError:
+                        report = S["check_module_missing"]
+                    except Exception as exc:
+                        report = S["check_failed"] % exc
+                    wx.CallAfter(finished, out, result, report, None, busy)
+                except Exception as exc:
+                    wx.CallAfter(finished, out, None, "", exc, busy)
+
+            threading.Thread(target=work, daemon=True, name="easypdf-export").start()
+
+        self.editor.get_body(got)
+
+    def _export_finished(self, out, result, report, error, busy):
+        busy.finish()
+        if error is not None:
+            name = type(error).__name__
+            if name == "EngineError":
+                message = S["export_no_engine"] % error
+            else:
+                message = S["export_failed"] % error
+            self.announce(message)
+            dialogs.show_text(self, "The PDF could not be made", message)
+            self.editor.focus()
+            return
+        lines = []
+        claimed = bool(getattr(result, "pdfua_claimed", False))
+        warnings = list(getattr(result, "warnings", []) or [])
+        if claimed:
+            lines.append(S["pdfua_claimed"])
+        else:
+            named = next((w for w in warnings if "PDF/UA" in w), "")
+            lines.append(S["pdfua_not_claimed"] % (named or ""))
+        pages = getattr(result, "pages", None)
+        engine = getattr(result, "engine", "")
+        lines.append("%s%s%s" % (out, (", %s pages" % pages) if pages else "",
+                                 (", made with %s" % engine) if engine else ""))
+        if warnings:
+            lines.append("")
+            lines.extend(warnings)
+        lines.append("")
+        lines.append(report or "")
+        text = "\n".join(lines)
+        self.announce(S["export_done"] % os.path.basename(out))
+        dialog = dialogs.TextDialog(self, S["export_report_title"], text,
+                                    buttons=(("Open &PDF", "open"), ("Open &folder", "folder"),
+                                             ("&Close", "close")),
+                                    field_label="&Report", size=(640, 380), escape_result="close")
+        try:
+            dialog.ShowModal()
+            choice = dialog.result
+        finally:
+            dialog.Destroy()
+        if choice == "open":
+            open_file(out)
+        elif choice == "folder":
+            open_folder(out)
+        self.editor.focus()
+
+    def on_print(self, _event=None):
+        self._ensure_title(self._print_after_title)
+
+    def _print_after_title(self):
+        out = os.path.join(tempfile.mkdtemp(prefix="easypdf-print-"),
+                           safe_filename(self.meta.get("title") or "document") + ".pdf")
+        self._export_to(out, self._print_finished)
+
+    def _print_finished(self, out, result, report, error, busy):
+        busy.finish()
+        if error is not None:
+            message = S["export_failed"] % error
+            self.announce(message)
+            dialogs.show_text(self, "The PDF could not be made", message)
+            return
+        self.announce_help(S["printing"])
+        try:
+            os.startfile(out, "print")
+            self.announce(S["printed"])
+        except Exception:
+            open_file(out)
+            self.announce(S["print_fallback"])
+
+    def on_check_pdf(self, _event=None):
+        try:
+            from .. import pdfcheck
+        except ImportError:
+            self.announce(S["check_module_missing"])
+            return
+        with wx.FileDialog(self, "Check a PDF", defaultDir=self.last_folder or paths.documents_dir(),
+                           wildcard=C.PDF_WILDCARD, style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as dialog:
+            if dialog.ShowModal() != wx.ID_OK:
+                return
+            path = dialog.GetPath()
+        name = os.path.basename(path)
+        self.announce_help(S["checking"] % name)
+
+        def work():
+            try:
+                text = pdfcheck.check(path).format_report()
+                wx.CallAfter(self._checked, name, text, None)
+            except Exception as exc:
+                wx.CallAfter(self._checked, name, "", exc)
+
+        threading.Thread(target=work, daemon=True, name="easypdf-check").start()
+
+    def _checked(self, name, text, error):
+        if error is not None:
+            message = S["check_failed"] % error
+            self.announce(message)
+            dialogs.show_text(self, S["check_report_title"], message)
+            return
+        self.announce(S["check_done"] % name)
+        dialogs.show_text(self, "%s: %s" % (S["check_report_title"], name), text, field_label="&Report")
+        self.editor.focus()
+
+    # ------------------------------------------------------ properties --
+    def on_properties(self, _event=None):
+        if (self.state or {}).get("figure"):
+            self.on_picture_properties()
+        else:
+            self._edit_properties()
+
+    def _edit_properties(self, focus="title"):
+        from .doc_properties_dialog import DocPropertiesDialog
+        dialog = DocPropertiesDialog(self, self.meta, focus=focus)
+        try:
+            accepted = dialog.ShowModal() == wx.ID_OK and dialog.result is not None
+            if accepted:
+                self.meta.update(dialog.result)
+                self.mark_modified()
+                self._apply_meta_to_page()
+                self._update_title()
+                self.announce_help(S["properties_applied"])
+        finally:
+            dialog.Destroy()
+        self.editor.focus()
+        return accepted
+
+    def on_rename(self, _event=None):
+        if (self.state or {}).get("figure"):
+            self.on_picture_properties()
+            return
+        with wx.TextEntryDialog(self, S["title_prompt"], "Document title",
+                                self.meta.get("title") or "") as dialog:
+            if dialog.ShowModal() != wx.ID_OK:
+                self.editor.focus()
+                return
+            title = dialog.GetValue().strip()
+        self.meta["title"] = title
+        self.mark_modified()
+        self._update_title()
+        self.announce_help(S["title_set"] % (title or S["untitled"]))
+        self.editor.focus()
+
+    def on_preferences(self, _event=None):
+        from .preferences_dialog import PreferencesDialog
+        dialog = PreferencesDialog(self, self, self.settings)
+        try:
+            if dialog.ShowModal() == wx.ID_OK:
+                self.settings.save()
+                for key in ("font_family", "font_points"):
+                    self.meta[key] = self.settings.get(key)
+                self._apply_meta_to_page()
+        finally:
+            dialog.Destroy()
+        self.editor.focus()
+
+    # ---------------------------------------------------------- insert --
+    def on_insert_link(self, _event=None):
+        def got(value, _error):
+            from .hyperlink_dialog import LinkDialog
+            link = (value or {}).get("link")
+            selected = (value or {}).get("selected") or ""
+            dialog = LinkDialog(self, text=(link or {}).get("text") or selected,
+                                href=(link or {}).get("href") or "", editing=bool(link))
+            try:
+                if dialog.ShowModal() == wx.ID_OK and dialog.result:
+                    text, href = dialog.result
+                    self.editor.call("insertLink", text, href)
+                    self.mark_modified()
+                    self.announce_help(S["link_updated" if link else "link_inserted"])
+            finally:
+                dialog.Destroy()
+            self.editor.focus()
+
+        self.editor.call("linkAtCaret", callback=got)
+
+    def on_insert_picture(self, _event=None):
+        from .image_dialog import PictureDialog
+        dialog = PictureDialog(self, self, spec=None, imported=False)
+        try:
+            if dialog.ShowModal() == wx.ID_OK and dialog.result:
+                spec = dialog.result
+                self.editor.call("insertFigure", spec)
+                self.mark_modified()
+                self.announce_help(S["picture_inserted"])
+        finally:
+            dialog.Destroy()
+        self.editor.focus()
+
+    def on_insert_table(self, _event=None):
+        from .table_dialog import TableDialog
+        dialog = TableDialog(self)
+        try:
+            if dialog.ShowModal() == wx.ID_OK and dialog.result:
+                rows, cols, header = dialog.result
+                self.editor.call("insertTable", rows, cols, header)
+                self.mark_modified()
+                self.announce_help(S["table_inserted"] % (rows, cols))
+        finally:
+            dialog.Destroy()
+        self.editor.focus()
+
+    def on_picture_properties(self, _event=None):
+        def got(value, _error):
+            if not value:
+                self.announce(S["no_picture_here"])
+                return
+            self._edit_figure(int(value["index"]), value)
+
+        self.editor.call("figureAtCaret", callback=got)
+
+    def _edit_figure(self, index, spec):
+        from .image_dialog import PictureDialog
+        dialog = PictureDialog(self, self, spec=spec, imported=bool(self.imported_from),
+                               context=self._context_for(index))
+        try:
+            if dialog.ShowModal() == wx.ID_OK and dialog.result:
+                self.editor.call("updateFigure", index, dialog.result)
+                self.mark_modified()
+                self.announce_help(S["picture_updated"])
+        finally:
+            dialog.Destroy()
+        self.editor.focus()
+
+    def _context_for(self, index):
+        return (self.meta.get("title") or "")
+
+    def _confirm_remove(self, kind, index):
+        if kind == "figure":
+            figure = (self.state or {}).get("figure") or {}
+            question = S["remove_picture_q"] % (figure.get("alt") or "none")
+            title = "Remove picture"
+        elif kind == "table":
+            question = S["remove_table_q"]
+            title = "Remove table"
+        else:
+            self.announce(S["no_object_here"])
+            return
+        if dialogs.ask(self, title, question, yes="&Remove", no="&Keep it"):
+            self.editor.call("removeObject", kind, int(index))
+            self.mark_modified()
+            self.announce_help(S["picture_removed" if kind == "figure" else "table_removed"])
+        self.editor.focus()
+
+    def on_delete_object(self, _event=None):
+        """The menu item: the page decides what is at the caret."""
+        def got(value, _error):
+            if value:
+                self._confirm_remove("figure", int(value["index"]))
+                return
+
+            def table(t, _e):
+                if t:
+                    self._confirm_remove("table", int(t["index"]))
+                else:
+                    self.announce(S["no_object_here"])
+
+            self.editor.call("tableAtCaret", callback=table)
+
+        self.editor.call("figureAtCaret", callback=got)
+
+    # -------------------------------------------------------- describe --
+    def on_describe_picture(self, _event=None):
+        def got(value, _error):
+            if not value:
+                self.announce(S["no_picture_here"])
+                return
+            self._describe_figure(int(value["index"]), value)
+
+        self.editor.call("figureAtCaret", callback=got)
+
+    def _describe_figure(self, index, spec, after=None):
+        try:
+            from .describe_dialog import DescribeImageDialog
+        except ImportError:
+            self.announce(S["describer_missing"])
+            return
+        from .image_dialog import data_uri_bytes
+        raw = data_uri_bytes(spec.get("src", ""))
+        dialog = DescribeImageDialog(self, raw, current_alt=spec.get("alt", ""),
+                                     context=self._context_for(index),
+                                     imported=bool(self.imported_from))
+        try:
+            dialog.ShowModal()
+            text = getattr(dialog, "result", None)
+            provider = getattr(dialog, "provider_used", "") or ""
+        finally:
+            dialog.Destroy()
+        if text:
+            new = dict(spec)
+            new.update({"alt": text.strip(), "decorative": False,
+                        "altSource": "ai:%s" % provider if provider else "ai"})
+            self.editor.call("updateFigure", index, new)
+            self.mark_modified()
+            self.announce_help(S["description_added"])
+        if after:
+            after()
+        else:
+            self.editor.focus()
+
+    def on_describe_document(self, _event=None):
+        try:
+            from .describe_dialog import DescribeDocumentDialog
+        except ImportError:
+            self.announce(S["describer_missing"])
+            return
+        from .image_dialog import data_uri_bytes
+
+        def got_body(body, error):
+            if error or body is None:
+                self.announce(S["export_failed"] % (error or ""))
+                return
+
+            def got_pictures(pictures, _e):
+                images = [data_uri_bytes(p.get("src", "")) for p in (pictures or [])]
+                dialog = DescribeDocumentDialog(self, body, [i for i in images if i])
+                try:
+                    dialog.ShowModal()
+                finally:
+                    dialog.Destroy()
+                self.editor.focus()
+
+            self.editor.call("pictures", callback=got_pictures)
+
+        self.editor.get_body(got_body)
+
+    # ------------------------------------------------------------ view --
+    def on_structure(self, _event=None):
+        def got(headings, _error):
+            from .structure_dialog import StructureDialog
+            headings = headings or []
+            if not headings:
+                self.announce(S["no_headings"])
+            dialog = StructureDialog(self, self, headings)
+            try:
+                if dialog.ShowModal() == wx.ID_OK:
+                    index = dialog.result
+                    self.editor.call("goToHeading", index, callback=lambda v, _e: (
+                        self.announce(S["heading_jump"] % (int(v.get("level") or 0), v.get("text") or ""))
+                        if v and v.get("ok") else None))
+            finally:
+                dialog.Destroy()
+            self.editor.focus()
+
+        self.editor.call("headings", callback=got)
+
+    def on_pictures(self, _event=None):
+        def got(pictures, _error):
+            from .pictures_dialog import PicturesDialog
+            pictures = pictures or []
+            if not pictures:
+                self.announce(S["no_pictures"])
+            dialog = PicturesDialog(self, self, pictures)
+            try:
+                if dialog.ShowModal() != wx.ID_OK or not dialog.result:
+                    self.editor.focus()
                     return
-                font = dlg.GetFontData().GetChosenFont()
-            self._editor._js_call("exec", "fontName", font.GetFaceName())
-            # execCommand fontSize accepts 1..7; pick by approximation.
-            pt = font.GetPointSize() or 11
-            self._editor._js_call("exec", "fontSize",
-                                  str(min(7, max(1, round(pt / 6)))))
+                what, index = dialog.result
+            finally:
+                dialog.Destroy()
+            spec = pictures[index]
+            if what == "go":
+                self.editor.call("goToPicture", index)
+                self.editor.focus()
+            elif what == "edit":
+                self._edit_figure(index, spec)
+                wx.CallAfter(self.on_pictures)
+            elif what == "describe":
+                self._describe_figure(index, spec, after=lambda: wx.CallAfter(self.on_pictures))
+
+        self.editor.call("pictures", callback=got)
+
+    # ------------------------------------------------------------ find --
+    def _ensure_find_dialog(self):
+        if self.find_dialog is None or not self.find_dialog:
+            from .find_dialog import FindDialog
+            self.find_dialog = FindDialog(self, self)
+        return self.find_dialog
+
+    def on_find(self, _event=None):
+        self._ensure_find_dialog().open(replacing=False)
+
+    def on_replace(self, _event=None):
+        self._ensure_find_dialog().open(replacing=True)
+
+    def find_in_document(self, text, forward, match_case, done=None):
+        def got(value, error):
+            result = value or {"found": False}
+            if done:
+                done(result)
+            else:
+                if result.get("found"):
+                    self.announce(S["found"] % (result.get("context") or ""))
+                else:
+                    self.announce(S["not_found"])
+
+        self.editor.call("find", text, bool(forward), bool(match_case), callback=got)
+
+    def on_find_next(self, _event=None):
+        if not self.find_text:
+            self.on_find()
+            return
+        self.find_in_document(self.find_text, True, self.find_match_case)
+
+    def on_find_previous(self, _event=None):
+        if not self.find_text:
+            self.on_find()
+            return
+        self.find_in_document(self.find_text, False, self.find_match_case)
+
+    # ------------------------------------------------------------ help --
+    def on_keyboard_help(self, _event=None):
+        dialog = dialogs.KeyboardHelpDialog(self, keymap.render_text())
+        try:
+            dialog.ShowModal()
+        finally:
+            dialog.Destroy()
+        self.editor.focus()
+
+    def on_user_guide(self, _event=None):
+        if self._guide_available:
+            self.announce_help(S["guide_opening"])
+            webbrowser.open(C.USER_GUIDE_URL)
+        else:
+            self.announce(S["guide_missing"])
+
+    def on_donate(self, _event=None):
+        self.announce_help(S["donate_opening"])
+        webbrowser.open(C.DONATE_URL)
+
+    def on_about(self, _event=None):
+        engine = S["engine_unknown"]
+        try:
+            from .. import pdfengine
+            found = pdfengine.engines()
+            engine = (", ".join("%s %s" % (e.name, e.version) for e in found)
+                      if found else S["engine_none"])
+        except ImportError:
+            pass
+        except Exception as exc:
+            engine = "could not be checked: %s" % exc
+        try:
+            from .. import appupdate
+            channel = appupdate.channel_state()
+        except Exception as exc:
+            channel = "could not be checked: %s" % exc
+        text = S["about"] % (C.APP_NAME, C.APP_VERSION, C.TAGLINE, C.VENDOR, engine, channel,
+                             C.FEEDBACK_EMAIL, C.HOME_URL)
+        dialogs.show_text(self, "About %s" % C.APP_NAME, text, field_label="&About")
+        self.editor.focus()
+
+    def on_exit(self, _event=None):
+        self.Close()
+
+    # --------------------------------------------------------- updates --
+    def _check_updates_quietly(self):
+        """Silent unless something is there. On a worker thread."""
+        if not self:
             return
 
-        ip   = self._editor.ctrl.GetInsertionPoint()
-        attr = wx.TextAttr()
-        self._editor.ctrl.GetStyle(ip, attr)
+        def work():
+            from .. import appupdate
+            try:
+                available, info, _message = appupdate.auto_check(paths.config_dir())
+            except Exception:
+                return
+            if available and info:
+                wx.CallAfter(self._offer_update, info)
 
-        fd = wx.FontData()
-        fd.SetInitialFont(attr.GetFont() if attr.HasFont() else self._editor.ctrl.GetFont())
-        fd.EnableEffects(True)
+        threading.Thread(target=work, daemon=True, name="easypdf-update").start()
 
-        with wx.FontDialog(self, fd) as dlg:
-            if dlg.ShowModal() == wx.ID_OK:
-                chosen_font = dlg.GetFontData().GetChosenFont()
-                s, e = self._editor.ctrl.GetSelection()
-                if s == e:
-                    s, e = self._editor._effective_range()
-                new_attr = wx.TextAttr()
-                self._editor.ctrl.GetStyle(s, new_attr)
-                new_attr.SetFont(chosen_font)
-                self._editor.ctrl.SetStyle(s, e, new_attr)
-                self._editor.ctrl.SetDefaultStyle(new_attr)
-                self._editor.ctrl.SetFocus()
+    def on_check_updates(self, _event=None):
+        self.announce_help(S["checking_updates"])
 
-    # ------------------------------------------------------------------
-    # Insert
-    # ------------------------------------------------------------------
+        def work():
+            from .. import appupdate
+            try:
+                available, info, message = appupdate.auto_check(paths.config_dir(), force=True)
+            except Exception as exc:
+                available, info, message = False, None, "Could not check. %s" % exc
+            wx.CallAfter(self._update_check_done, available, info, message)
 
-    def _on_insert_image(self, event):
-        with ImageDialog(self) as dlg:
-            if dlg.ShowModal() == wx.ID_OK:
-                path, alt_text = dlg.get_result()
-                self._editor.insert_image(path, alt_text)
-                self._modified = True
-                self._update_status()
+        threading.Thread(target=work, daemon=True, name="easypdf-update").start()
 
-    def _on_insert_link(self, event):
-        if self._editor.ctrl is None:
-            pre = ""    # WebEditor: dialog will use its own selection logic
+    def _update_check_done(self, available, info, message):
+        if not self:
+            return
+        if available and info:
+            self._offer_update(info)
+            return
+        problem = ""
+        if message and "newest" not in message.lower():
+            problem = message
+        self.announce_help(message or S["newest_version"])
+        updatedialog.ask_about_update(self, C.APP_NAME, C.APP_VERSION, problem=problem)
+        self.editor.focus()
+
+    def _offer_update(self, info):
+        from .. import appupdate
+        version = info.get("version", "a new version")
+        notes = (info.get("notes") or "").strip()
+        choice = updatedialog.ask_about_update(self, C.APP_NAME, C.APP_VERSION,
+                                               new_version=version, notes=notes)
+        if choice != updatedialog.UPDATE:
+            self.announce_help(S["update_skipped"])
+            self.editor.focus()
+            return
+        self.announce_help(S["downloading"] % info.get("version", "the update"))
+        box = updatedialog.DownloadProgressDialog(
+            self, self, "version %s" % info.get("version", "the update"))
+        box.Show()
+        self._update_box = box
+
+        def work():
+            try:
+                got = appupdate.download(info, progress=_step)
+            except appupdate.Stopped:
+                got = (None, S["download_stopped"])
+            except Exception as exc:
+                got = (None, S["download_failed"] % exc)
+            wx.CallAfter(self._download_done, got[0], got[1])
+
+        def _step(done, total):
+            if box.cancelled:
+                raise appupdate.Stopped()
+            box.step(done, total)
+
+        threading.Thread(target=work, daemon=True, name="easypdf-dl").start()
+
+    def _download_done(self, token, message):
+        """Velopack has the package. Apply it and restart, after the flush.
+
+        A portable Velopack copy updates exactly like an installed one, so
+        nothing branches here (Tony, 2026-09-09; appupdate.py). The body is
+        fetched first, asynchronously, so the flush that runs just before
+        the process ends has it to hand and needs no pumping of the loop.
+        """
+        box = self._update_box
+        if box is not None:
+            try:
+                box.Destroy()
+            except Exception:
+                pass
+            self._update_box = None
+        if not token:
+            self.announce(message)
+            dialogs.show_text(self, "Update failed", message)
+            self.editor.focus()
+            return
+        self._restart_body = None
+        if not self.modified:
+            self._install_update(token)
+            return
+
+        def got(body, _error):
+            self._restart_body = body
+            self._install_update(token)
+
+        self.editor.get_body(got)
+
+    def _install_update(self, token):
+        from .. import appupdate
+        self.announce(S["updating"] % C.APP_NAME)
+        ok, message = appupdate.run_installer(token, before_restart=self._flush_for_restart)
+        # On success the process ends inside run_installer and nothing
+        # below runs; a return means Velopack could not start the update.
+        if not ok:
+            self._closing = False
+            self._autosave.Start(AUTOSAVE_MS)
+            self.announce(message)
+            dialogs.show_text(self, "Update failed", message)
+            self.editor.focus()
+
+    def _flush_for_restart(self):
+        """What must be on disk before Velopack ends this process.
+
+        Settings, recent files and the window geometry; and, when the
+        document is modified, an autosave snapshot from the body fetched in
+        _download_done, so the restarted app can offer it back. The clean
+        exit marker is the client's own business (it clears it), so a
+        normal restart does not nag; the snapshot is offered after an
+        update restart by _after_show reading RESTARTED_AFTER_UPDATE.
+        """
+        self._closing = True
+        try:
+            self._autosave.Stop()
+        except Exception:
+            pass
+        self._save_geometry()
+        self.settings["last_folder"] = self.last_folder
+        self.settings.save()
+        body = getattr(self, "_restart_body", None)
+        if self.modified and body:
+            source = self.path or self.source_path or ""
+            try:
+                from .. import docfile
+                docfile.snapshot(body, dict(self.meta), source)
+            except ImportError:
+                fallback_snapshot(body, dict(self.meta), source)
+            except Exception:
+                pass
+
+    # ------------------------------------------------- autosave, crash --
+    def _on_autosave_tick(self, _event):
+        if not self.modified or self._closing:
+            return
+        self.editor.get_body(self._snapshot_body)
+
+    def _snapshot_body(self, body, error):
+        if error or body is None or self._closing:
+            return
+        digest = hashlib.sha1(body.encode("utf-8", "replace")).hexdigest()
+        if digest == self._snapshot_hash:
+            return
+        self._snapshot_hash = digest
+        meta = dict(self.meta)
+        source = self.path or self.source_path or ""
+
+        def work():
+            try:
+                from .. import docfile
+                where = docfile.snapshot(body, meta, source)
+            except ImportError:
+                where = fallback_snapshot(body, meta, source)
+            except Exception:
+                return
+            wx.CallAfter(self._snapshot_written, where)
+
+        threading.Thread(target=work, daemon=True, name="easypdf-autosave").start()
+
+    def _snapshot_written(self, where):
+        if not self:
+            return
+        self.snapshot_path = where
+        self.note(S["autosaved"])
+
+    def _discard_snapshot(self):
+        where, self.snapshot_path = self.snapshot_path, None
+        self._snapshot_hash = None
+        if not where:
+            return
+        try:
+            from .. import docfile
+            docfile.discard_snapshot(where)
+        except ImportError:
+            try:
+                os.remove(where)
+            except OSError:
+                pass
+        except Exception:
+            pass
+
+    def _recoverable(self):
+        try:
+            from .. import docfile
+            return list(docfile.recoverable() or [])
+        except ImportError:
+            return fallback_recoverable()
+        except Exception:
+            return []
+
+    def _offer_recovery(self):
+        entries = self._recoverable()
+        if not entries:
+            return
+        dialog = dialogs.RecoveryDialog(self, entries)
+        try:
+            dialog.ShowModal()
+            choice = dialog.result
+        finally:
+            dialog.Destroy()
+        if choice == "recover":
+            snapshot, source, _when, title = entries[0]
+            self._recover(snapshot, source, title)
+        elif choice == "delete":
+            for snapshot, _s, _w, _t in entries:
+                try:
+                    from .. import docfile
+                    docfile.discard_snapshot(snapshot)
+                except Exception:
+                    try:
+                        os.remove(snapshot)
+                    except OSError:
+                        pass
+            self.announce(S["snapshots_deleted"])
+        self.editor.focus()
+
+    def _recover(self, snapshot, source, title):
+        try:
+            body, meta, warnings = read_document(snapshot, "native")
+        except Exception as exc:
+            self.announce(S["open_failed"] % (title or "the recovered document", exc))
+            return
+        clean, more = sanitise(body)
+        self.meta = self._new_meta()
+        for key in ("title", "author", "lang", "subject", "page_size", "margin_inches"):
+            if (meta or {}).get(key) not in (None, ""):
+                self.meta[key] = meta[key]
+        if source and source.lower().endswith(C.DOC_EXTENSION):
+            self.path = source
+            self.source_path = source
         else:
-            s, e = self._editor.ctrl.GetSelection()
-            pre  = self._editor.ctrl.GetRange(s, e) if s != e else ""
-        with HyperlinkDialog(self, pre) as dlg:
-            if dlg.ShowModal() == wx.ID_OK:
-                display_text, url = dlg.get_result()
-                self._editor.insert_link(display_text, url)
-                self._modified = True
-                self._update_status()
+            self.path = None
+            self.source_path = source or None
+        self.imported_from = ""
+        self.modified = True
+        self.snapshot_path = snapshot
+        self._apply_meta_to_page()
+        self._update_title()
+        self.editor.load_clean_body(clean)
+        self.announce(S["recovered"] % (title or self.document_name()))
 
-    # ------------------------------------------------------------------
-    # View
-    # ------------------------------------------------------------------
-
-    def _on_show_structure(self, event):
-        if not self._structure_nav:
-            self._structure_nav = StructureNavigator(self, self._editor)
-        self._structure_nav.show_and_refresh()
-
-    def _on_next_heading(self, event):
-        style = self._editor.go_to_next_heading()
-        self._status.SetStatusText(style if style else "No next heading", 1)
-
-    def _on_prev_heading(self, event):
-        style = self._editor.go_to_prev_heading()
-        self._status.SetStatusText(style if style else "No previous heading", 1)
-
-    # ------------------------------------------------------------------
-    # Help
-    # ------------------------------------------------------------------
-
-    def _on_shortcuts(self, event):
-        msg = (
-            "Easy PDF — Keyboard Shortcuts\n"
-            "==============================\n\n"
-            "Character formatting\n"
-            "  Ctrl+B                 Bold\n"
-            "  Ctrl+Shift+I           Italic\n"
-            "  Ctrl+U                 Underline\n"
-            "  Ctrl+Shift+K           Strikethrough\n"
-            "  Ctrl+Shift+F           Font dialog\n\n"
-            "Paragraph alignment\n"
-            "  Ctrl+L                 Align Left\n"
-            "  Ctrl+E                 Align Center\n"
-            "  Ctrl+R                 Align Right\n"
-            "  Ctrl+J                 Justify\n\n"
-            "Paragraph styles\n"
-            "  Ctrl+Alt+1–6           Heading 1–6\n"
-            "  Ctrl+Alt+0             Normal paragraph\n"
-            "  Ctrl+Alt+8             Bullet list\n"
-            "  Ctrl+Alt+9             Numbered list\n"
-            "  Ctrl+Q                 Block quote\n\n"
-            "Navigation\n"
-            "  F6 / Shift+F6          Next / Previous heading\n"
-            "  Alt+F6                 Document structure navigator\n\n"
-            "Edit\n"
-            "  Ctrl+F                 Find\n"
-            "  Ctrl+H                 Find and Replace\n\n"
-            "File\n"
-            "  Ctrl+N / O / S         New / Open / Save\n"
-            "  Ctrl+Shift+E           Export PDF\n"
-            "  Ctrl+P                 Print\n\n"
-            "Insert\n"
-            "  Ctrl+I                 Insert image\n"
-            "  Ctrl+K                 Insert hyperlink\n\n"
-            "NVDA tips\n"
-            "  NVDA+F                 Check formatting at caret\n"
-            "  NVDA+End               Read status bar\n"
-            "  Alt+F6                 Heading outline for navigation"
-        )
-        wx.MessageBox(msg, "Keyboard Shortcuts — Easy PDF", wx.OK | wx.ICON_INFORMATION)
-
-    def _on_about(self, event):
-        wx.MessageBox(
-            "Easy PDF\n"
-            "Accessible PDF authoring — PDF/UA-1 output for NVDA.\n\n"
-            "Press F1 for a full list of keyboard shortcuts.",
-            "About Easy PDF",
-            wx.OK | wx.ICON_INFORMATION,
-        )
-
-    # ------------------------------------------------------------------
-    # File helpers
-    # ------------------------------------------------------------------
-
-    def _save_file(self, path: str):
+    # ----------------------------------------------------------- close --
+    def _on_close(self, event):
+        if event.CanVeto() and not self._confirm_discard():
+            event.Veto()
+            return
+        self._closing = True
         try:
-            self._editor.save(path)
-            self._current_file = path
-            self._modified     = False
-            self._update_status()
-        except Exception as exc:
-            wx.MessageBox(f"Could not save:\n{exc}", "Save error", wx.OK | wx.ICON_ERROR)
+            self._autosave.Stop()
+        except Exception:
+            pass
+        self._discard_snapshot()
+        self._save_geometry()
+        self.settings["last_folder"] = self.last_folder
+        self.settings.save()
+        if self.find_dialog is not None and self.find_dialog:
+            try:
+                self.find_dialog.Destroy()
+            except Exception:
+                pass
+        # The frame owns the WebView: never Destroy it here (CLAUDE.md).
+        event.Skip()
 
-    def _load_file(self, path: str):
+
+# ------------------------------------------------------------ helpers --
+
+def appupdate_flag(name):
+    """appupdate.RESTARTED_AFTER_UPDATE or FIRST_RUN, without the import
+    being able to stop the window from opening."""
+    try:
+        from .. import appupdate
+        return getattr(appupdate, name, None)
+    except Exception:
+        return None
+
+
+def restarted_after_update():
+    """The version string when Velopack restarted the app after an update,
+    else an empty string."""
+    return str(appupdate_flag("RESTARTED_AFTER_UPDATE") or "")
+
+
+def kind_of(path):
+    """docfile.kind_of, or the extension until Worker A's module exists."""
+    try:
+        from .. import docfile
+        return docfile.kind_of(path)
+    except ImportError:
+        ext = os.path.splitext(path)[1].lower()
+        return {".epdf": "native", ".html": "html", ".htm": "html", ".txt": "text",
+                ".md": "markdown", ".markdown": "markdown", ".docx": "docx",
+                ".pdf": "pdf"}.get(ext, "html")
+
+
+def source_name(kind):
+    return {"html": "a web page", "text": "a text file", "markdown": "Markdown",
+            "docx": "Word", "pdf": "a PDF", "rtf": "Rich Text"}.get(kind, kind or "another format")
+
+
+def read_document(path, kind, progress=None):
+    """(body_html, meta, warnings), through docfile and pdfimport when present."""
+    if kind == "pdf":
         try:
-            self._editor.load(path)
-            self._current_file = path
-            self._modified     = False
-            self._update_status()
-        except Exception as exc:
-            wx.MessageBox(f"Could not open:\n{exc}", "Open error", wx.OK | wx.ICON_ERROR)
+            from .. import pdfimport
+        except ImportError:
+            raise RuntimeError(S["import_module_missing"] % "PDF")
+        result = pdfimport.import_pdf(path, progress=progress) if progress else pdfimport.import_pdf(path)
+        meta = dict(getattr(result, "meta", {}) or {})
+        meta.setdefault("source_kind", "pdf")
+        warnings = list(getattr(result, "warnings", []) or [])
+        if getattr(result, "is_scanned", False) and not warnings:
+            warnings.append("This PDF has no text layer: it is pictures of text, and "
+                            "there is no OCR in this release.")
+        return getattr(result, "body_html", ""), meta, warnings
+    try:
+        from .. import docfile
+    except ImportError:
+        docfile = None
+    if docfile is not None:
+        got = docfile.load(path)
+        body, meta = got[0], got[1]
+        warnings = list(got[2]) if len(got) > 2 else []
+        return body, dict(meta or {}), warnings
+    # Fallbacks until docfile exists: native and html by regex, text by lines.
+    if kind in ("native", "html"):
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+        match = re.search(r"<body[^>]*>(.*?)</body>", text, re.S | re.I)
+        body = match.group(1) if match else text
+        title = re.search(r"<title>(.*?)</title>", text, re.S | re.I)
+        meta = {"title": (title.group(1).strip() if title else "")}
+        return body, meta, [S["docfile_missing"]]
+    if kind == "text":
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return text_to_html(fh.read()), {"source_kind": "text"}, [S["docfile_missing"]]
+    raise RuntimeError(S["import_module_missing"] % source_name(kind))
 
-    def _confirm_discard(self) -> bool:
-        """
-        Return True if it is safe to proceed (the caller may destroy or replace
-        the document).  Handles three outcomes:
 
-          Save       → saves the file first, then proceeds
-          Don't Save → discards changes and proceeds immediately
-          Cancel     → aborts the operation, caller should not proceed
-        """
-        if not self._modified:
-            return True
+def write_document(path, body, meta):
+    """docfile.save, or a plain self-contained HTML file until it exists."""
+    try:
+        from .. import docfile
+        docfile.save(path, body, meta)
+        return
+    except ImportError:
+        pass
+    head = ("<!DOCTYPE html>\n<html lang=\"%s\">\n<head>\n<meta charset=\"utf-8\">\n"
+            "<title>%s</title>\n<meta name=\"author\" content=\"%s\">\n"
+            "<meta name=\"description\" content=\"%s\">\n"
+            "<meta name=\"generator\" content=\"%s %s\">\n</head>\n<body>\n"
+            % (escape(meta.get("lang", "en")), escape(meta.get("title", "")),
+               escape(meta.get("author", "")), escape(meta.get("subject", "")),
+               C.APP_NAME, C.APP_VERSION))
+    data = head + body + "\n</body>\n</html>\n"
+    folder = os.path.dirname(path) or "."
+    fd, temp = tempfile.mkstemp(prefix=".easypdf-", suffix=".tmp", dir=folder)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(data)
+    os.replace(temp, path)
 
-        with wx.MessageDialog(
-            self,
-            "Do you want to save your changes?",
-            "Unsaved changes",
-            wx.YES_NO | wx.CANCEL | wx.CANCEL_DEFAULT | wx.ICON_WARNING,
-        ) as dlg:
-            dlg.SetYesNoCancelLabels("&Save", "&Don't Save", "&Cancel")
-            result = dlg.ShowModal()
 
-        if result == wx.ID_YES:
-            self._on_save(None)
-            return not self._modified   # True only if save actually completed
-        if result == wx.ID_NO:
-            return True                 # discard and proceed
-        return False                    # Cancel — abort the operation
+def text_to_html(text):
+    """Plain text to paragraphs: blank lines separate them, single newlines
+    become line breaks."""
+    blocks = re.split(r"\n\s*\n", text.replace("\r\n", "\n").replace("\r", "\n"))
+    out = []
+    for block in blocks:
+        block = block.strip("\n")
+        if not block.strip():
+            continue
+        out.append("<p>%s</p>" % "<br>".join(escape(line) for line in block.split("\n")))
+    return "".join(out) or "<p><br></p>"
+
+
+def clipboard_html_fragment(html):
+    """The fragment inside Windows' CF_HTML wrapper, or the html as given."""
+    start = html.find("<!--StartFragment-->")
+    end = html.find("<!--EndFragment-->")
+    if start >= 0 and end > start:
+        return html[start + len("<!--StartFragment-->"):end]
+    match = re.search(r"<body[^>]*>(.*?)</body>", html, re.S | re.I)
+    return match.group(1) if match else html
+
+
+def count_pictures_needing_alt(body_html):
+    return len(re.findall(r"<img\b[^>]*\bdata-needs-alt\b", body_html or "", re.I))
+
+
+def safe_filename(name):
+    name = re.sub(r'[\\/:*?"<>|]+', " ", name or "").strip()
+    return (name[:80] or S["untitled"]).strip(". ") or S["untitled"]
+
+
+def open_file(path):
+    try:
+        os.startfile(path)
+    except Exception:
+        pass
+
+
+def open_folder(path):
+    try:
+        subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+    except Exception:
+        try:
+            os.startfile(os.path.dirname(path))
+        except Exception:
+            pass
+
+
+def fallback_snapshot(body, meta, source):
+    """An autosave file until docfile.snapshot exists."""
+    folder = paths.autosave_dir()
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    where = os.path.join(folder, "snapshot-%s%s" % (stamp, C.DOC_EXTENSION))
+    write_document(where, body, dict(meta, source_path=source))
+    return where
+
+
+def fallback_recoverable():
+    folder = paths.autosave_dir()
+    out = []
+    try:
+        names = sorted(os.listdir(folder), reverse=True)
+    except OSError:
+        return out
+    for name in names:
+        if name.endswith(C.DOC_EXTENSION):
+            where = os.path.join(folder, name)
+            when = time.strftime("%Y-%m-%d %H:%M", time.localtime(os.path.getmtime(where)))
+            out.append((where, "", when, name))
+    return out

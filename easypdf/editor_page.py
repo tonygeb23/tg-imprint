@@ -396,51 +396,131 @@ _JS = r"""
     s.addRange(r);
   }
 
-  function leaveLists() {
+  // Lists, all measured on this WebView2 (2026-09-09, probe_lists2):
+  //
+  // - Chromium's own list toggle on an item of the SAME kind takes the
+  //   item out and leaves its text bare between the split halves of the
+  //   list ("<ul><li>A</li></ul>Two<br><ul><li>C</li></ul>"), and a
+  //   formatBlock straight after wraps that bare text cleanly, as a p or
+  //   as a heading. Both steps are execCommand, so undo sees them (two
+  //   Ctrl+Z put the item back).
+  // - The toggle of the OTHER kind converts the list in place: an ol li
+  //   under insertUnorderedList becomes a ul li, at the same level.
+  // - insertUnorderedList on a paragraph puts the new list INSIDE the
+  //   paragraph ("<p><ul><li>"), which the PDF tags as a paragraph holding
+  //   a list; insertHTML over the selected paragraph or paragraphs gives a
+  //   clean list in their place and undoes in one step. So a new list is
+  //   made by insertHTML, never by the native command.
+  // - outdent and formatBlock on a list item both go wrong (outdent leaves
+  //   bare text, formatBlock wraps the whole list in the heading), so
+  //   neither is used for leaving a list any more.
+  function listOf(li) { return li ? li.parentNode : null; }
+
+  function nested(li) {
+    var list = listOf(li);
+    return !!(list && list.parentNode && list.parentNode !== ed
+              && /^(LI|UL|OL)$/.test(list.parentNode.tagName));
+  }
+
+  // Whitespace-only text nodes either side of a top level list. They come
+  // from the sanitised load and from insertHTML, and Chromium's toggle
+  // merges them into the freed item's text ("\nTwo"), which formatBlock
+  // keeps and the next insertHTML turns into &nbsp;. Measured: removing
+  // them first gives clean text, and undo and redo both still replay
+  // correctly (probe_lists6, 2026-09-09).
+  function dropBlankNeighbours(list) {
+    var top = list;
+    while (top && top.parentNode && top.parentNode !== ed) { top = top.parentNode; }
+    if (!top || top.parentNode !== ed) { return; }
+    ['previousSibling', 'nextSibling'].forEach(function (side) {
+      var t = top[side];
+      while (t && t.nodeType === 3 && !t.nodeValue.trim()) {
+        var next = t[side];
+        t.parentNode.removeChild(t);
+        t = next;
+      }
+    });
+  }
+
+  // Take the item at the caret out of its list. The text is left bare
+  // unless `wrap` is set, because the caller's own formatBlock follows.
+  function leaveList(wrap) {
     var guard = 0;
-    while (closest('li') && guard++ < 8) { exec('outdent'); }
-    // Outdent leaves the item's text bare at the top level (measured:
-    // "<p>One</p>Two<br><p>Three</p>"); give it its paragraph back.
-    wrapBareText();
+    while (closest('li') && nested(closest('li')) && guard++ < 8) { exec('outdent'); }
+    var li = closest('li');
+    if (li) {
+      dropBlankNeighbours(listOf(li));
+      exec(listOf(li).tagName === 'OL' ? 'insertOrderedList' : 'insertUnorderedList');
+    }
+    if (wrap !== false) { wrapBareText(); }
   }
 
   function setBlock(tag) {
     var was = currentBlockName();
-    if (closest('li')) { leaveLists(); }
+    if (closest('li')) { leaveList(false); }
     if (closest('blockquote') && tag !== 'blockquote') { exec('outdent'); }
     exec('formatBlock', '<' + tag + '>');
     return { was: was, now: currentBlockName() };
   }
 
+  function topOf(node) {
+    var n = node;
+    while (n && n.parentNode && n.parentNode !== ed) { n = n.parentNode; }
+    return (n && n.parentNode === ed) ? n : null;
+  }
+
+  // The top level blocks the selection touches, first to last.
+  function selectedTopBlocks() {
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount) { return []; }
+    var r = sel.getRangeAt(0);
+    var a = topOf(r.startContainer), b = topOf(r.endContainer);
+    if (!a) { return []; }
+    var out = [], n = a;
+    while (n) {
+      if (n.nodeType === 1) { out.push(n); }
+      if (n === b) { break; }
+      n = n.nextSibling;
+    }
+    return out;
+  }
+
   function toggleList(cmd, wantOrdered) {
     var li = closest('li');
     if (li) {
-      var isOrdered = li.closest('ol,ul').tagName === 'OL';
-      if (isOrdered === wantOrdered) { leaveLists(); return { on: false }; }
+      var isOrdered = listOf(li).tagName === 'OL';
+      if (isOrdered === wantOrdered) { leaveList(true); return { on: false }; }
+      exec(cmd);
+      return { on: !!closest('li') };
     }
     var block = currentBlockName();
-    if (/^h[1-6]$/.test(block)) { exec('formatBlock', '<p>'); }
+    if (block === 'figure' || block === 'td' || block === 'th') { return { on: false }; }
     if (closest('blockquote')) { exec('outdent'); }
-    exec(cmd);
-    liftNestedLists();
+    var blocks = selectedTopBlocks();
+    if (blocks.some(function (b) { return /^H[1-6]$/.test(b.tagName); })) {
+      exec('formatBlock', '<p>');
+      blocks = selectedTopBlocks();
+    }
+    blocks = blocks.filter(function (b) { return /^(P|DIV|PRE)$/.test(b.tagName); });
+    if (!blocks.length) { return { on: false }; }
+    var tag = wantOrdered ? 'ol' : 'ul';
+    var html = '<' + tag + '>' + blocks.map(function (b) {
+      var inner = b.innerHTML.replace(/^\s+|\s+$/g, '').replace(/<br>$/, '');
+      return '<li>' + (inner || '<br>') + '</li>';
+    }).join('') + '</' + tag + '>';
+    var r = document.createRange();
+    r.setStartBefore(blocks[0]);
+    r.setEndAfter(blocks[blocks.length - 1]);
+    var s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+    exec('insertHTML', html);
     return { on: !!closest('li') };
-  }
-
-  // Measured: after any formatBlock round trip, insertUnorderedList puts
-  // the new list INSIDE the paragraph it came from ("<p><ul><li>"), which
-  // the PDF would tag as a paragraph holding a list. Lift such a list out
-  // of a paragraph or heading wrapper and drop the wrapper if it is empty.
-  function liftNestedLists() {
-    Array.prototype.slice.call(ed.querySelectorAll('p > ul, p > ol, h1 > ul, h2 > ul, h3 > ul, h4 > ul, h5 > ul, h6 > ul, h1 > ol, h2 > ol, h3 > ol, h4 > ol, h5 > ol, h6 > ol')).forEach(function (list) {
-      var wrap = list.parentNode;
-      wrap.parentNode.insertBefore(list, wrap);
-      if (!(wrap.textContent || '').trim() && !wrap.querySelector('img')) { wrap.parentNode.removeChild(wrap); }
-    });
   }
 
   function toggleQuote() {
     if (closest('blockquote')) { exec('outdent'); return { on: false }; }
-    if (closest('li')) { leaveLists(); }
+    if (closest('li')) { leaveList(true); }
     exec('formatBlock', '<blockquote>');
     return { on: !!closest('blockquote') };
   }
@@ -854,7 +934,7 @@ _JS = r"""
         var b = blockOf(sel.anchorNode);
         if (b) { var probe = document.createRange(); probe.selectNodeContents(b); probe.setStart(sel.getRangeAt(0).endContainer, sel.getRangeAt(0).endOffset); atEnd = probe.toString() === ''; }
       }
-      if (closest('li')) { leaveLists(); }
+      if (closest('li')) { leaveList(true); }
       var html = figureHtml(spec);
       exec('insertHTML', html + '<p><br></p>');
       postState();
@@ -948,7 +1028,7 @@ _JS = r"""
       for (var r = r0; r < rows; r++) { html += '<tr>' + new Array(cols + 1).join('<td><br></td>') + '</tr>'; }
       if (rows <= r0) { html += '<tr>' + new Array(cols + 1).join('<td><br></td>') + '</tr>'; }
       html += '</tbody></table><p><br></p>';
-      if (closest('li')) { leaveLists(); }
+      if (closest('li')) { leaveList(true); }
       exec('insertHTML', html);
       var all = tables();
       var made = all[all.length - 1];
