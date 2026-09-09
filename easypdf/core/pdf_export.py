@@ -35,7 +35,7 @@ from __future__ import annotations
 import os
 from io import BytesIO
 
-from core.document import (
+from easypdf.core.document import (
     Document, HeadingNode, ParagraphNode, ImageNode,
     ListNode, BlockQuoteNode, Run,
 )
@@ -72,7 +72,7 @@ def export_html_to_pdf(
     Requires WeasyPrint — without it the structure tree can't be built.
     """
     import weasyprint
-    from core.html_builder import _CSS as _HTML_CSS
+    from easypdf.core.html_builder import _CSS as _HTML_CSS
 
     page = (
         "<!DOCTYPE html>\n"
@@ -126,7 +126,7 @@ def _export_weasyprint(doc: Document) -> bytes:
     semantic HTML elements produced by html_builder.document_to_html().
     """
     import weasyprint
-    from core.html_builder import document_to_html
+    from easypdf.core.html_builder import document_to_html
 
     html_str = document_to_html(doc)
     # base_url is the fallback base for relative URLs — not needed since

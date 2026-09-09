@@ -1,8 +1,14 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# Build output; the durable copy of an installer is the one on the server
 build/
 dist/
 *.spec
+
+# Local scratch
 *.part
 .pytest_cache/
+report.txt
+selftest*.txt

@@ -1,5 +1,14 @@
-wxPython>=4.2
-reportlab>=4.0
-Pillow>=10.0
-pikepdf>=8.0
-weasyprint>=60.0
+wxPython
+# Reads and patches the exported PDF: the PDF/UA metadata and the in-app
+# accessibility check. Ships qpdf as DLLs beside the package.
+pikepdf
+# Reads a PDF somebody sent so it can be made accessible: text, headings by
+# size, and the pictures. Never writes the PDF; Chromium does that.
+PyMuPDF
+# Image sizing and the JPEG the describer sends.
+Pillow
+# Verifies the signed update manifest. Missing it does not crash: it silently
+# reports every update unavailable, which is why the selftest checks it.
+cryptography
+# Speech and braille through the running screen reader.
+accessible_output2

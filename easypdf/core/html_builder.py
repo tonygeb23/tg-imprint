@@ -21,7 +21,7 @@ import os
 from html import escape as _esc
 from pathlib import Path
 
-from core.document import (
+from easypdf.core.document import (
     Document, HeadingNode, ParagraphNode, ImageNode,
     ListNode, BlockQuoteNode, Run,
 )

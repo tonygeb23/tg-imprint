@@ -33,17 +33,17 @@ import tempfile
 import subprocess
 import wx
 
-from ui.editor import Editor
-from ui.web_editor import WebEditor
-from ui.toolbar import FormattingToolbar
-from ui.image_dialog import ImageDialog
-from ui.hyperlink_dialog import HyperlinkDialog
-from ui.find_replace_dialog import FindReplaceDialog
-from ui.doc_properties_dialog import DocPropertiesDialog
-from ui.structure_panel import StructureNavigator
-from core.rtc_parser import parse_document
-from core.pdf_export import export_pdf, export_html_to_pdf
-from core.pdf_validator import validate_pdf
+from easypdf.ui.editor import Editor
+from easypdf.ui.web_editor import WebEditor
+from easypdf.ui.toolbar import FormattingToolbar
+from easypdf.ui.image_dialog import ImageDialog
+from easypdf.ui.hyperlink_dialog import HyperlinkDialog
+from easypdf.ui.find_replace_dialog import FindReplaceDialog
+from easypdf.ui.doc_properties_dialog import DocPropertiesDialog
+from easypdf.ui.structure_panel import StructureNavigator
+from easypdf.core.rtc_parser import parse_document
+from easypdf.core.pdf_export import export_pdf, export_html_to_pdf
+from easypdf.core.pdf_validator import validate_pdf
 
 
 class MainWindow(wx.Frame):
@@ -277,7 +277,7 @@ class MainWindow(wx.Frame):
             self._editor.ctrl.Bind(wx.EVT_LEFT_UP, self._on_caret_moved)
             self._editor.ctrl.Bind(wx.EVT_KEY_UP,  self._on_caret_moved)
         else:
-            from ui.web_editor import EVT_WEBEDITOR_STATE
+            from easypdf.ui.web_editor import EVT_WEBEDITOR_STATE
             self._editor.Bind(EVT_WEBEDITOR_STATE, self._on_caret_moved)
 
     def _build_accelerators(self):
@@ -604,7 +604,7 @@ class MainWindow(wx.Frame):
         return self._find_dlg
 
     def _show_web_find(self, replace: bool) -> None:
-        from ui.web_find_dialog import WebFindDialog
+        from easypdf.ui.web_find_dialog import WebFindDialog
         if not self._find_dlg:
             self._find_dlg = WebFindDialog(self, self._editor)
         if replace:

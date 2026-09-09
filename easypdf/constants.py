@@ -1,0 +1,99 @@
+"""Names and the few values every part of Easy PDF has to agree on.
+
+Everything user-visible here is a draft until Tony has read it: see
+docs/STRINGS.md. The frozen block is different: it may never change.
+"""
+
+# The display name. One constant, so renaming the product is one line here
+# and nothing else. It is NOT used to derive anything that has to stay
+# stable; that is what the frozen block below is for.
+APP_NAME = "Easy PDF"
+APP_VERSION = "1.0.0"
+VENDOR = "TG Studios"
+#: docs/STRINGS.md: draft, needs approval.
+TAGLINE = "Write a document, get a PDF that screen readers can read."
+
+# ---------------------------------------------------------------------------
+# FROZEN at first release. Do not change these even if APP_NAME changes.
+#
+# INSTANCE_SLUG names the single-instance mutex and the window tag, so a new
+# build has to recognise an older build already running. FEED_SLUG names the
+# update manifest on tgstudios.app, so every installed copy keeps finding its
+# feed. APP_USER_MODEL_ID is how the Windows taskbar groups the app's windows
+# and pins it. The installer's AppId GUID lives in tools/easypdf.iss and is
+# frozen for the same reason: a changed GUID installs alongside the old copy
+# instead of over it. tests/test_scaffold.py asserts every one of these.
+# ---------------------------------------------------------------------------
+INSTANCE_SLUG = "EasyPDF"
+FEED_SLUG = "easy-pdf"
+APP_USER_MODEL_ID = "TGStudios.EasyPDF.1"
+#: EasyPDF-1.0.0-Setup.exe and Easy-PDF-1.0.0-windows.zip. Hyphens rather
+#: than spaces because these names become URLs, scp arguments and TG Stats
+#: download rules, and a space escapes differently in each.
+INSTALLER_BASENAME = "EasyPDF"
+ZIP_BASENAME = "Easy-PDF"
+
+# Where the app sends people. The guide and the product page do not exist
+# until the release that publishes them; the Help menu says so rather than
+# opening a 404 (Worker B: check the page before offering the link, or word
+# the item as "on the web, when published").
+HOME_URL = "https://tgstudios.app/easy-pdf/"
+USER_GUIDE_URL = "https://tgstudios.app/easy-pdf-guide/"
+DONATE_URL = "https://tgstudios.app/donate/"
+FEEDBACK_EMAIL = "hello@tgstudios.app"
+
+# ------------------------------------------------------------------ files ---
+#: The native document format: self-contained UTF-8 HTML. It opens in any
+#: browser, so nobody's writing is ever trapped in this app.
+DOC_EXTENSION = ".html"
+DOC_WILDCARD = "Easy PDF documents (*.html)|*.html"
+#: What Open will take. Anything not native is imported and then saved as
+#: native on the first Save.
+IMPORT_EXTENSIONS = (".html", ".htm", ".txt", ".md", ".markdown", ".rtf", ".pdf")
+OPEN_WILDCARD = (
+    "All documents (*.html;*.htm;*.txt;*.md;*.rtf;*.pdf)|"
+    "*.html;*.htm;*.txt;*.md;*.markdown;*.rtf;*.pdf|"
+    "Easy PDF documents (*.html)|*.html|"
+    "PDF files (*.pdf)|*.pdf|"
+    "Markdown (*.md)|*.md;*.markdown|"
+    "Plain text (*.txt)|*.txt|"
+    "Rich Text (*.rtf)|*.rtf|"
+    "All files (*.*)|*.*"
+)
+PDF_WILDCARD = "PDF files (*.pdf)|*.pdf"
+#: How many recent documents the File menu remembers.
+RECENT_FILES = 8
+#: Seconds between autosave snapshots of an unsaved document.
+AUTOSAVE_SECONDS = 60
+
+# ----------------------------------------------------------------- speech ---
+#: One setting, three levels, worded as CONVENTIONS.md says. Three channels:
+#:   announce()          what you cannot otherwise know: a failure, a refusal,
+#:                       a value you asked for. Silent only at "none".
+#:   announce_help()     a confirmation of something you just did, or a hint
+#:                       you have read before. Silent below "all".
+#:   announce_answer()   a direct answer to a question you asked with a key
+#:                       whose only job is to answer it. Always spoken.
+#: All of them write the status bar at every level.
+SPEECH_ALL, SPEECH_ESSENTIAL, SPEECH_NONE = "all", "essential", "none"
+SPEECH_LEVELS = (SPEECH_ALL, SPEECH_ESSENTIAL, SPEECH_NONE)
+SPEECH_LABELS = (
+    "Everything, including confirmations and hints",
+    "Only what I cannot hear or read for myself",
+    "Nothing. Let my screen reader do all of it",
+)
+DEFAULT_SPEECH_LEVEL = SPEECH_ALL
+
+# ------------------------------------------------------------------- page ---
+#: The page the PDF is laid out on. Letter with one inch margins, the North
+#: American default; A4 is a setting for everyone else.
+PAGE_SIZES = ("letter", "A4", "legal")
+DEFAULT_PAGE_SIZE = "letter"
+DEFAULT_MARGIN_INCHES = 1.0
+DEFAULT_FONT_FAMILY = "Arial, Helvetica, sans-serif"
+DEFAULT_FONT_POINTS = 11
+
+# ------------------------------------------------------------------- AI ---
+#: The providers, in the order Tony named them, and the labels the settings
+#: page uses. The real work is in ai.py, copied from TG Drop Deck's vision.py.
+AI_PROVIDERS = ("anthropic", "openai", "google")

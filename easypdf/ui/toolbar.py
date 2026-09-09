@@ -1,5 +1,5 @@
 import wx
-from ui.editor import _STYLE_CFG
+from easypdf.ui.editor import _STYLE_CFG
 
 _PARA_STYLES = [
     "Normal",
@@ -206,7 +206,7 @@ class FormattingToolbar(wx.ToolBar):
             self._editor.apply_alignment("justify")
 
     def _on_insert_image(self, event: wx.CommandEvent) -> None:
-        from ui.image_dialog import ImageDialog
+        from easypdf.ui.image_dialog import ImageDialog
         if self._editor is None:
             return
         with ImageDialog(self._parent) as dlg:

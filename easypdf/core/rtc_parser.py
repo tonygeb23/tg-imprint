@@ -22,11 +22,11 @@ from __future__ import annotations
 import re
 import wx
 
-from core.document import (
+from easypdf.core.document import (
     Document, HeadingNode, ParagraphNode,
     ListNode, ListItemNode, BlockQuoteNode, ImageNode, Run,
 )
-from ui.editor import IMAGE_MARKER_PREFIX, _align_wx_to_str, _LINK_COLOR_RGB
+from easypdf.ui.editor import IMAGE_MARKER_PREFIX, _align_wx_to_str, _LINK_COLOR_RGB
 
 _BULLET_RE    = re.compile(r"^•\s")
 _NUMBERED_RE  = re.compile(r"^\d+\.\s")
