@@ -8,6 +8,7 @@ described figure's text recovered from the tags.
     python tests/test_import.py
 """
 
+import base64
 import os
 import shutil
 import sys
@@ -231,6 +232,21 @@ body, meta = docfile.load(pdf_path)
 check("through docfile.load the body is sanitised and the images travel in meta",
       meta["source_kind"] == "pdf" and len(meta["images"]) == 2 and 'data-alt-source="pdf"' in body
       and meta["is_scanned"] is False)
+
+print("\nA decorative picture beside a described one on the same page")
+circle = DATA + base64.b64encode(open(os.path.join(FIXTURES, "circle.png"), "rb").read()).decode("ascii")
+same = ('<h1>Two pictures</h1><figure><img src="%s" alt="A described circle"><figcaption>Figure 1.</figcaption></figure>'
+        '<p>Between them.</p><p><img src="%s" alt="" role="presentation"></p><p>After both.</p>' % (circle, circle))
+same_pdf = os.path.join(WORK, "same-page.pdf")
+pdfexport.export_html(same, same_pdf, {"title": "Two pictures", "lang": "en-US"})
+result = pdfimport.import_pdf(same_pdf)
+check("both pictures are on page 1", [i.page for i in result.images] == [1, 1], [i.page for i in result.images])
+check("the described picture's text is recovered even with a decorative picture on the same page",
+      result.images and result.images[0].alt == "A described circle" and result.images[0].alt_source == "pdf",
+      [(i.alt, i.alt_source) for i in result.images])
+check("the decorative picture gets no description",
+      len(result.images) == 2 and result.images[1].alt == "" and result.images[1].alt_source == "")
+check("and no mismatch warning", not any("could not be matched" in w for w in result.warnings), result.warnings)
 
 print("\nA scanned PDF and files that cannot be opened")
 scanned = os.path.join(WORK, "scanned.pdf")

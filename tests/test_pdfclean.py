@@ -180,6 +180,18 @@ check("the same text in file mode gives the same body", out == "<p>Hello world</
 out, _w = clean('<p><span lang="fr">Tout</span></p>', for_export=True)
 check("the lang hoist works in export mode too", out == '<p lang="fr">Tout</p>', out)
 
+print("\nAddresses and shares")
+out, _w = clean('<p><a href="mailto:a@b.com?subject=hello world">m</a> <a href=" https://x.y/path ">s</a></p>')
+check("a space inside an address is kept as %20 and the ends are trimmed",
+      out == '<p><a href="mailto:a@b.com?subject=hello%20world">m</a> <a href="https://x.y/path">s</a></p>', out)
+B = chr(92)
+calls = []
+out, warnings = clean('<p><img src="%s" alt="s"> <img src="file://server/share/y.png" alt="t"></p>'
+                      % (B + B + "server" + B + "share" + B + "x.png"),
+                      embed=lambda src: calls.append(src))
+check("a picture on a network share is left out before any callback runs", "<img" not in out and calls == [], (out, calls))
+check("with the network share sentence, once per picture", sum(1 for w in warnings if "network share" in w) == 2, warnings)
+
 print("\nIdempotence")
 sample = open(os.path.join(HERE, "tests", "fixtures", "sample-body.html"), encoding="utf-8").read()
 once, _w = normalise(sample)

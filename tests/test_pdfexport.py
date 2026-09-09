@@ -4,7 +4,12 @@ The structure tree, the fonts, the XMP and the Info dictionary of the
 app's own export of tests/fixtures/sample-body.html are read back from the
 file; nothing here is inferred from the code that wrote it. Then the
 three ways the PDF/UA claim is withheld: a picture without a description,
-a skipped heading level, no title.
+a skipped heading level, no title. Then the Overseer's round 2 defects: a
+received font family cannot break out of the print page (1), an engine
+that stops tagging makes the export refuse and save nothing (2), junk
+after the PDF header is a sentence rather than a temp path (4), and the
+file goes into place atomically with one sentence for a locked or
+read-only destination (5 and 12).
 
     python tests/test_pdfexport.py
 """
@@ -225,6 +230,119 @@ result7 = pdfexport.export_html(BODY, os.path.join(WORK, "a4.pdf"), dict(META, p
 with fitz.open(os.path.join(WORK, "a4.pdf")) as doc:
     width = doc[0].rect.width
 check("an A4 export has an A4 page (595 points wide)", 590 < width < 600, width)
+
+print("\nA received font family cannot break out of the print page")
+INJECTION = "Arial}</style><p>INJECTED</p><style>"
+settings = pdfexport.settings_from(dict(META, font_family=INJECTION))
+check("a font family holding a brace and a tag falls back to the default",
+      settings["font_family"] == C.DEFAULT_FONT_FAMILY, settings["font_family"])
+page = pdfexport.build_page("<p>x</p>", settings)
+check("the injection string is not in the print page", "INJECTED" not in page and "</style><p>" not in page)
+check("the print page carries the Content Security Policy",
+      '<meta http-equiv="Content-Security-Policy" content="%s">' % pdfexport.CONTENT_SECURITY_POLICY in page
+      and "default-src 'none'" in page and "img-src data:" in page and "style-src 'unsafe-inline'" in page)
+good = pdfexport.settings_from(dict(META, font_family='Georgia, "Times New Roman", serif'))
+check("a font family of letters, commas and quotes is kept", good["font_family"] == 'Georgia, "Times New Roman", serif')
+odd_families = ("Arial; color: red", "Arial</style>", "url(x)", "Arial" + chr(92) + "x", "<b>", "Arial{", "")
+check("semicolons, angle brackets, parentheses, backslashes, braces and an empty value all fall back",
+      all(pdfexport.settings_from({"font_family": odd})["font_family"] == C.DEFAULT_FONT_FAMILY for odd in odd_families))
+inject_pdf = os.path.join(WORK, "inject.pdf")
+pdfexport.export_html("<h1>Title</h1><p>Body text.</p>", inject_pdf, dict(META, font_family=INJECTION))
+with fitz.open(inject_pdf) as doc:
+    inject_text = "\n".join(page.get_text() for page in doc)
+check("rendered through the engine, the page holds no injected text",
+      "INJECTED" not in inject_text and "Body text." in inject_text, inject_text)
+
+print("\nAn engine that stops tagging")
+FAKE = pdfengine.Engine("Fake engine", "fake.exe", "0.0.0")
+
+
+def untagged_engine(html_text, out_path, timeout=90, engine=None):
+    with fitz.open() as doc:
+        page = doc.new_page()
+        page.insert_text((72, 100), "Text with no tags", fontname="helv", fontsize=12)
+        doc.save(out_path)
+    return FAKE
+
+
+def junk_engine(html_text, out_path, timeout=90, engine=None):
+    with open(out_path, "wb") as handle:
+        handle.write(b"%PDF-1.7 and then nothing a PDF reader can use")
+    return FAKE
+
+
+earlier = open(out, "rb").read()
+real_render = pdfengine.render_pdf
+pdfengine.render_pdf = untagged_engine
+try:
+    try:
+        pdfexport.export_html(BODY, out, META)
+        check("an untagged engine output raises EngineError", False)
+    except pdfengine.EngineError as exc:
+        check("an untagged engine output raises EngineError with the untagged sentence",
+              str(exc) == pdfexport.MSG_UNTAGGED, exc)
+    check("the earlier PDF at that path is untouched", open(out, "rb").read() == earlier)
+    fresh = os.path.join(WORK, "untagged.pdf")
+    try:
+        pdfexport.export_html(BODY, fresh, META)
+    except pdfengine.EngineError:
+        pass
+    check("nothing is written at a new path either", not os.path.exists(fresh))
+    check("no part file is left in the folder", not [n for n in os.listdir(WORK) if n.endswith(".part")])
+finally:
+    pdfengine.render_pdf = real_render
+
+print("\nGarbage from the engine")
+pdfengine.render_pdf = junk_engine
+junk = os.path.join(WORK, "junk.pdf")
+try:
+    try:
+        pdfexport.export_html(BODY, junk, META)
+        check("junk after the PDF header raises EngineError", False)
+    except pdfengine.EngineError as exc:
+        check("junk after the PDF header raises EngineError with a sentence", str(exc) == pdfexport.MSG_DAMAGED, exc)
+        check("and no temp path or library words in it",
+              "easypdf-export" not in str(exc) and "trailer" not in str(exc)
+              and tempfile.gettempdir().lower() not in str(exc).lower())
+    except Exception as exc:
+        check("junk after the PDF header raises EngineError, not %s" % type(exc).__name__, False, exc)
+finally:
+    pdfengine.render_pdf = real_render
+check("no file was left at the destination", not os.path.exists(junk))
+
+print("\nThe file goes into place atomically")
+earlier = open(out, "rb").read()
+real_replace = os.replace
+
+
+def no_space(source, target):
+    if os.path.abspath(str(target)) == os.path.abspath(out):
+        raise OSError(28, "No space left on device")
+    return real_replace(source, target)
+
+
+os.replace = no_space
+try:
+    pdfexport.export_html(BODY, out, META)
+    check("a failed replace raises EngineError", False)
+except pdfengine.EngineError as exc:
+    check("a failed replace raises EngineError naming the path and the reason",
+          str(exc).startswith("The PDF could not be written to " + out) and "No space left" in str(exc), exc)
+finally:
+    os.replace = real_replace
+check("the earlier PDF is untouched after the failed replace", open(out, "rb").read() == earlier)
+check("no part file is left beside it", not [n for n in os.listdir(WORK) if n.endswith(".part")])
+with open(out, "rb"):
+    # Held open, as another program would hold it: os.replace over it
+    # fails with PermissionError on Windows.
+    try:
+        pdfexport.export_html(BODY, out, META)
+        check("a destination open in another program raises EngineError", False)
+    except pdfengine.EngineError as exc:
+        check("a destination open in another program raises EngineError with the one sentence "
+              "for locks and read-only folders", str(exc) == pdfexport.MSG_NOT_WRITTEN % out, exc)
+check("the earlier PDF is untouched after the lock", open(out, "rb").read() == earlier)
+check("no part file is left after the lock", not [n for n in os.listdir(WORK) if n.endswith(".part")])
 
 print("\nWithout an engine")
 real = pdfengine.engines

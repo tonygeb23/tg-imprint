@@ -21,7 +21,12 @@ pikepdf (`pdfexport`: MarkInfo, Lang, DisplayDocTitle, the Info
 dictionary, the XMP, a description on every link annotation), is checked
 (`pdfcheck.check`), and gets the PDF/UA-1 identifier only if every check
 passes. The user always gets a tagged PDF; what varies is whether it
-carries the claim, and the report says why.
+carries the claim, and the report says why. If the engine's own output
+turns out to have no MarkInfo or no structure tree (an engine update that
+stopped tagging), the export stops with a sentence and nothing is saved,
+because an accessibility product that quietly produces an inaccessible
+file is worse than one that refuses (`CLAUDE.md`). The same happens when
+the engine writes something pikepdf cannot read back.
 
 ## What the export guarantees
 
@@ -48,7 +53,9 @@ back with pikepdf (`tests/test_pdfexport.py`):
 - Every link annotation carries the link's text as `/Contents`, decoded
   from the content stream through the font's ToUnicode map, so a screen
   reader that reads the annotation rather than the tagged text says the
-  words (Matterhorn 28-011).
+  words (ISO 14289-1, PDF/UA-1, clause 7.18.1, which asks every
+  annotation for a Contents entry; the Matterhorn checkpoint number is
+  not cited here until it has been checked against the protocol).
 - Headings become bookmarks (`--generate-pdf-document-outline`).
 - No header or footer: the default Chromium page furniture (date, title,
   the temp file path, page numbers) is switched off with
@@ -61,6 +68,18 @@ back with pikepdf (`tests/test_pdfexport.py`):
   rather than a Figure with no Alt wrapped round both (measured: a plain
   figure element becomes exactly that outer Figure, which PAC and this
   checker would fail).
+- The print page loads nothing but its own inline stylesheet and data
+  pictures. It carries a Content Security Policy (default-src none,
+  img-src data, style-src unsafe-inline), and the font family from the
+  document's properties is letters, digits, spaces, commas, quotes and
+  hyphens or it falls back to the default, both on the way into a
+  document from a received file and on the way into the print page. A
+  received `.epdf` cannot put script or markup into the page the engine
+  prints.
+- The finished PDF is copied beside its destination and swapped in with
+  one replace, so a full disk, an interrupted copy or a file held open in
+  another program leaves the earlier PDF at that path untouched, and the
+  export says which.
 
 ## The identifier is gated
 
@@ -191,6 +210,17 @@ save and export. The same table is in the module's docstring.
 | `alt="..." data-alt-source="ai:openai"` | written by AI, unchecked | Figure with the Alt; counted in one export warning |
 | `alt="..." data-alt-source="pdf" data-needs-alt="1"` | recovered from the original PDF's tags, unchecked | Figure with the Alt; counted in one export warning; listed in Pictures |
 
+A picture's source is a data URI once it is in the document. On the way
+in, a local file is embedded with a warning that says so, a web address
+is never fetched, and a source on another computer (a UNC path with
+either separator, the device path form, or a file address that names a
+host other than this one) is refused before anything probes it, because
+a probe opens a connection to that host with the user's credentials the
+moment the file is opened. The one exception is a document that itself
+lives on a share: a picture inside its own folder is on a host the user
+already reached. The rule is applied after percent decoding as well, so
+an encoded path cannot slip past it.
+
 ## Known gaps in the engine
 
 Measured, and not fixable from here:
@@ -231,9 +261,14 @@ When the PDF is tagged, pikepdf reads the tree first, the import warns
 that the structure is re-created from the layout, and each page's Figure
 Alt strings are attached to that page's pictures only when the counts
 match, marked `data-alt-source="pdf"` and `data-needs-alt="1"` so
-Pictures lists them as recovered and to be checked. A wrong description
-presented as fact is worse than none, so a mismatch attaches nothing and
-warns.
+Pictures lists them as recovered and to be checked. Only the pictures
+drawn inside tagged content (marked content with an MCID) are counted:
+a picture drawn inside an Artifact, or outside any marked content at
+all, which is how Chromium draws a decorative picture (measured), is not
+in the tree and cannot be the one a Figure describes, so a decorative
+picture on the same page never breaks the match for the described one
+beside it. A wrong description presented as fact is worse than none, so
+a mismatch attaches nothing and warns.
 
 A page with no text is a scanned page. When every page is, `is_scanned`
 is set and the warning says there is no text recognition in this

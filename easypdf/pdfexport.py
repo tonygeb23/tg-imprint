@@ -28,15 +28,22 @@ The steps, in order (DECISIONS.md decision 2 and edit A4):
    traced), and every link annotation's Contents set to the link's text.
    Never a byte-level patch: the prototype's corrupted the cross reference
    table.
-5. pdfcheck.check on the result. The PDF/UA identifier (pdfuaid:part 1) is
-   written only when Report.pdfua_gate is true; otherwise the file is
-   still exported, tagged, with a warning naming the check that failed.
-6. One move into place. All the work happens in a temp folder, so a
+5. pdfcheck.check on the result. If the engine's own output has no
+   MarkInfo or no structure tree, the export stops with EngineError and
+   nothing is saved: never ship an untagged PDF (CLAUDE.md, decision 2).
+   Otherwise the PDF/UA identifier (pdfuaid:part 1) is written only when
+   Report.pdfua_gate is true; else the file is still exported, tagged,
+   with a warning naming the check that failed.
+6. One replace into place. All the work happens in a temp folder, so a
    Dropbox or antivirus lock on the destination cannot interrupt the
-   patch and check in the middle.
+   patch and check in the middle, and the finished file is copied beside
+   its destination and swapped in with os.replace, so a failed copy or a
+   locked destination leaves the earlier PDF untouched.
 
 Nothing here touches wx or prints. EngineError (from pdfengine) is the
-one exception a caller should expect; its message is a sentence.
+one exception a caller should expect; its message is a sentence. A
+pikepdf failure on the engine's output is wrapped the same way, so no
+temp path and no library words reach the user.
 """
 
 import datetime
@@ -65,8 +72,23 @@ MSG_NO_TITLE = ("The document has no title. The PDF was written without one, and
                 "export again.")
 MSG_NO_CLAIM = ("The PDF/UA identifier was left out because %s did not pass: %s. The PDF "
                 "is still tagged. Fix that and export again to add the claim.")
-MSG_LOCKED = ("The PDF could not be written to %s because the file is open in another "
-              "program. Close it there and export again.")
+MSG_NOT_WRITTEN = ("The PDF could not be written to %s. Check that the folder allows "
+                   "writing and that the file is not open in another program.")
+MSG_WRITE_FAILED = ("The PDF could not be written to %s. The system reported: %s. The "
+                    "earlier file at that path, if there was one, is untouched.")
+MSG_UNTAGGED = ("The PDF engine wrote a PDF without tags, so nothing was saved. Save as "
+                "web page keeps everything. Try the export again, and if it happens "
+                "every time, update Microsoft Edge.")
+MSG_DAMAGED = ("The PDF engine wrote a file that could not be read back as a PDF, so "
+               "nothing was saved. Try the export again, and if it happens every time, "
+               "update Microsoft Edge.")
+MSG_WORK_FAILED = ("The PDF could not be finished because a temporary file could not be "
+                   "written. The system reported: %s. Nothing was saved. Free some disk "
+                   "space and export again.")
+#: The print page loads nothing but its own inline stylesheet and data
+#: pictures: no script, no fetch, no font or frame from anywhere, whatever
+#: a received document carried into the meta (Overseer round 2, defect 1).
+CONTENT_SECURITY_POLICY = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
 
 
 @dataclass
@@ -158,7 +180,10 @@ def settings_from(meta):
         "lang": lang,
         "page_size": page_size,
         "margin": ("%.3f" % margin).rstrip("0").rstrip("."),
-        "font_family": str(_meta_value(meta, "font_family", C.DEFAULT_FONT_FAMILY)).strip(),
+        # Letters, digits, spaces, commas, quotes and hyphens only; anything
+        # else could close the style element, so it falls back to the default.
+        "font_family": htmlclean.clean_font_family(
+            _meta_value(meta, "font_family", C.DEFAULT_FONT_FAMILY)),
         "font_points": ("%.1f" % points).rstrip("0").rstrip("."),
     }
 
@@ -176,6 +201,7 @@ def build_page(clean_body, settings):
         '<html lang="%s">' % html.escape(settings["lang"], quote=True),
         "<head>",
         '<meta charset="utf-8">',
+        '<meta http-equiv="Content-Security-Policy" content="%s">' % CONTENT_SECURITY_POLICY,
         "<title>%s</title>" % html.escape(settings["title"]),
     ]
     if settings["author"]:
@@ -207,6 +233,19 @@ def patch_pdf(source, target, settings, engine):
     producer = "%s %s (%s %s)" % (C.APP_NAME, C.APP_VERSION, engine.name, engine.version)
     creator = "%s %s" % (C.APP_NAME, C.APP_VERSION)
     when = _now()
+    try:
+        _patch_pdf(source, target, settings, producer, creator, when)
+    except EngineError:
+        raise
+    except OSError as exc:
+        raise EngineError(MSG_WORK_FAILED % (exc.strerror or str(exc)))
+    except Exception:
+        # pikepdf's message for a damaged file is the temp path and library
+        # words; the user gets a sentence (Overseer round 2, defect 4).
+        raise EngineError(MSG_DAMAGED)
+
+
+def _patch_pdf(source, target, settings, producer, creator, when):
     pdf = pikepdf.open(source)
     try:
         root = pdf.Root
@@ -262,13 +301,66 @@ def patch_pdf(source, target, settings, engine):
 
 def write_identifier(path):
     """pdfuaid:part 1 in the file's XMP, in place."""
-    pdf = pikepdf.open(path, allow_overwriting_input=True)
     try:
-        with pdf.open_metadata(set_pikepdf_as_editor=False, update_docinfo=False) as meta:
-            meta["pdfuaid:part"] = "1"
-        pdf.save(path)
-    finally:
-        pdf.close()
+        pdf = pikepdf.open(path, allow_overwriting_input=True)
+        try:
+            with pdf.open_metadata(set_pikepdf_as_editor=False, update_docinfo=False) as meta:
+                meta["pdfuaid:part"] = "1"
+            pdf.save(path)
+        finally:
+            pdf.close()
+    except OSError as exc:
+        raise EngineError(MSG_WORK_FAILED % (exc.strerror or str(exc)))
+    except Exception:
+        raise EngineError(MSG_DAMAGED)
+
+
+def _quiet_remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def put_in_place(source, out_path):
+    """Copy the finished file to a temporary name beside its destination,
+    then replace in one step, so a failed copy (disk full, antivirus) or a
+    locked destination leaves the earlier PDF at out_path untouched
+    (Overseer round 2, defects 5 and 12). Raises EngineError with a
+    sentence that names the path."""
+    folder = os.path.dirname(out_path) or "."
+    part = None
+    try:
+        handle = tempfile.NamedTemporaryFile("wb", dir=folder, prefix=".easypdf-",
+                                             suffix=".pdf.part", delete=False)
+        part = handle.name
+        with handle, open(source, "rb") as reader:
+            shutil.copyfileobj(reader, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(part, out_path)
+    except PermissionError:
+        if part:
+            _quiet_remove(part)
+        raise EngineError(MSG_NOT_WRITTEN % out_path)
+    except OSError as exc:
+        if part:
+            _quiet_remove(part)
+        raise EngineError(MSG_WRITE_FAILED % (out_path, exc.strerror or str(exc)))
+
+
+def _refuse_untagged(report):
+    """EngineError when the engine's own output is not a tagged PDF. The
+    file is in the work folder, which the caller removes, so nothing is
+    saved (Overseer round 2, defect 2)."""
+    by_key = {r.key: r for r in report.results}
+    readable = by_key.get("readable")
+    if readable is not None and not readable.passed:
+        raise EngineError(MSG_DAMAGED)
+    for key in ("tagged", "tree"):
+        item = by_key.get(key)
+        if item is None or not item.passed:
+            raise EngineError(MSG_UNTAGGED)
 
 
 # ------------------------------------------------------------- the entry ---
@@ -309,6 +401,7 @@ def export_html(body_html, out_path, meta, progress=None):
         patch_pdf(rendered, patched, settings, engine)
         step(STEP_CHECK_PDF)
         report = pdfcheck.check(patched)
+        _refuse_untagged(report)
         claimed = False
         if report.pdfua_gate:
             step(STEP_IDENTIFIER)
@@ -322,12 +415,7 @@ def export_html(body_html, out_path, meta, progress=None):
             names = report.failed_names() or ["a check"]
             warnings.append(MSG_NO_CLAIM % (
                 "this check" if len(names) == 1 else "these checks", ", ".join(names)))
-        try:
-            if os.path.exists(out_path):
-                os.remove(out_path)
-            shutil.move(patched, out_path)
-        except PermissionError:
-            raise EngineError(MSG_LOCKED % out_path)
+        put_in_place(patched, out_path)
         report.path = out_path
         return ExportResult(path=out_path, pages=report.pages, warnings=warnings,
                             engine="%s %s" % (engine.name, engine.version),

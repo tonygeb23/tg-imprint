@@ -298,6 +298,17 @@ class TextIndex:
     def text(self, page_index, mcid):
         return self.page(page_index)["mcids"].get(mcid, "")
 
+    def image_marks(self, page_index):
+        """[(object number, drawn inside tagged content)] for every image
+        XObject drawn on the page, in drawing order. Only a picture drawn
+        inside marked content with an MCID can be the one a Figure in the
+        tree describes; one drawn inside an Artifact, or outside any
+        marked content at all (Chromium draws a decorative picture that
+        way, measured), is not in the tree. An importer uses this so a
+        decorative picture on the same page never breaks the match for
+        the described one beside it (Overseer round 2, defect 6)."""
+        return list(self.page(page_index)["image_marks"])
+
     def _decoder(self, font):
         try:
             key = font.objgen
@@ -311,7 +322,8 @@ class TextIndex:
 
     def _scan(self, index):
         page = self.pdf.pages[index]
-        info = {"mcids": {}, "untagged": 0, "chars": 0, "images": 0, "error": ""}
+        info = {"mcids": {}, "untagged": 0, "chars": 0, "images": 0, "image_marks": [],
+                "error": ""}
         try:
             resources = page.obj.get("/Resources", pikepdf.Dictionary())
             data = _content_bytes(page.obj.get("/Contents"))
@@ -392,6 +404,12 @@ class TextIndex:
                     return value
             return None
 
+        def first(kind):
+            for item_kind, value in operands:
+                if item_kind == kind:
+                    return value
+            return None
+
         for match in _TOKEN_RE.finditer(data):
             kind = match.lastgroup
             if kind == "glyph":
@@ -411,7 +429,13 @@ class TextIndex:
                         pending_space = True
                         line_y = None
                 elif name == "BDC":
-                    tag = last("name")
+                    # The tag is the first name operand and the property
+                    # the last: "/Artifact /P1 BDC" names a property list
+                    # in the resources, and reading the last name as the
+                    # tag would count that artifact as content (Overseer
+                    # round 2, defect 11). Chromium writes inline
+                    # dictionaries, so the app's own files never hit it.
+                    tag = first("name")
                     mcid = None
                     if tag != "/Artifact":
                         found = _MCID_RE.search(data, op_start, match.start())
@@ -423,7 +447,7 @@ class TextIndex:
                             mcid = _mcid_from_properties(resources, prop, tag)
                     stack.append("artifact" if tag == "/Artifact" else mcid)
                 elif name == "BMC":
-                    stack.append("artifact" if last("name") == "/Artifact" else None)
+                    stack.append("artifact" if first("name") == "/Artifact" else None)
                 elif name == "EMC":
                     if stack:
                         stack.pop()
@@ -467,6 +491,11 @@ class TextIndex:
                         subtype = str(xobject.get("/Subtype", ""))
                         if subtype == "/Image":
                             info["images"] += 1
+                            try:
+                                objnum = xobject.objgen[0]
+                            except Exception:
+                                objnum = 0
+                            info["image_marks"].append((objnum, current_mcid() is not None))
                         elif subtype == "/Form" and depth < MAX_FORM_DEPTH:
                             key = xobject.objgen
                             if key not in visited:

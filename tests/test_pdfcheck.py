@@ -262,6 +262,39 @@ check("a password protected PDF says so",
 report = pdfcheck.check(os.path.join(WORK, "does-not-exist.pdf"))
 check("a missing file is reported, not raised", len(report.results) == 1 and not report.passed)
 
+print("\nAn artifact by named property list")
+propd = os.path.join(WORK, "artifact-property.pdf")
+with pikepdf.new() as pdf:
+    page = pdf.add_blank_page(page_size=(200, 200))
+    image = pikepdf.Stream(pdf, bytes([255, 0, 0]) * 16)
+    image["/Type"] = pikepdf.Name("/XObject")
+    image["/Subtype"] = pikepdf.Name("/Image")
+    image["/Width"] = 4
+    image["/Height"] = 4
+    image["/ColorSpace"] = pikepdf.Name("/DeviceRGB")
+    image["/BitsPerComponent"] = 8
+    page.obj["/Resources"] = pikepdf.Dictionary(
+        XObject=pikepdf.Dictionary(Im1=image),
+        Properties=pikepdf.Dictionary(P1=pikepdf.Dictionary(Type=pikepdf.Name("/Pagination"))))
+    # The first image is inside an artifact named through the property
+    # list (the form that read as content before the fix, Overseer round
+    # 2, defect 11), the second inside tagged content, the third inside a
+    # BMC artifact.
+    page.obj["/Contents"] = pdf.make_stream(
+        b"/Artifact /P1 BDC q 50 0 0 50 20 20 cm /Im1 Do Q EMC "
+        b"/P <</MCID 0>> BDC q 50 0 0 50 100 20 cm /Im1 Do Q EMC "
+        b"/Artifact BMC q 50 0 0 50 20 100 cm /Im1 Do Q EMC")
+    pdf.save(propd)
+with pikepdf.open(propd) as pdf:
+    index = pdfcheck.TextIndex(pdf)
+    marks = index.image_marks(0)
+    drawn = index.page(0)["images"]
+check("three images are counted", drawn == 3, drawn)
+check("the named property list form is untagged, the MCID one tagged, the BMC artifact untagged",
+      [m[1] for m in marks] == [False, True, False], marks)
+check("every mark carries the image's object number, the same object three times",
+      len(marks) == 3 and all(m[0] > 0 for m in marks) and len(set(m[0] for m in marks)) == 1, marks)
+
 print("\nThe text index")
 with pikepdf.open(CLEAN) as pdf:
     index = pdfcheck.TextIndex(pdf)

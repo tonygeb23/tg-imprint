@@ -248,6 +248,28 @@ def available():
 # ------------------------------------------------------------- rendering ---
 
 
+def _kill_tree(process):
+    """Stop the browser and every child it started. subprocess's own
+    timeout kills msedge.exe alone; its renderer, GPU and crashpad
+    children can outlive it holding the profile folder and the CPU
+    (Overseer round 2, defect 7), so on Windows the whole tree goes
+    through taskkill /T."""
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                           capture_output=True, timeout=20, creationflags=CREATE_NO_WINDOW)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    try:
+        process.kill()
+    except OSError:
+        pass
+    try:
+        process.communicate(timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def _remove_tree(folder, tries=8):
     """The browser can hold its profile folder for a moment after it exits."""
     for attempt in range(tries):
@@ -291,15 +313,18 @@ def render_pdf(html_text, out_path, timeout=90, engine=None):
             Path(html_path).as_uri(),
         ]
         try:
-            completed = subprocess.run(
-                command, capture_output=True, timeout=timeout,
+            process = subprocess.Popen(
+                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0)
-        except subprocess.TimeoutExpired:
-            raise EngineError(MSG_TIMEOUT % int(timeout))
         except OSError as exc:
             raise EngineError(MSG_CANNOT_START % exc)
+        try:
+            _out, err = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _kill_tree(process)
+            raise EngineError(MSG_TIMEOUT % int(timeout))
         if not os.path.isfile(target) or os.path.getsize(target) == 0:
-            tail = completed.stderr.decode("utf-8", "replace").strip().splitlines()
+            tail = (err or b"").decode("utf-8", "replace").strip().splitlines()
             tail = " ".join(tail[-3:]) if tail else "nothing"
             raise EngineError(MSG_NO_OUTPUT % (engine.name, tail[:300]))
         with open(target, "rb") as handle:

@@ -60,6 +60,10 @@ PAGE_META = ("page_size", "margin_inches", "font_family", "font_points")
 # docs/STRINGS.md, Worker A.
 MSG_NOT_A_PICTURE = ("That file is not a picture Easy PDF can read. PNG, JPEG, GIF, BMP "
                      "and WebP pictures work.")
+MSG_TOO_LARGE = ("That picture is too large to open. Pictures over about 178 million "
+                 "pixels are refused. Reduce it in another program and insert it again.")
+MSG_RTF = ("Easy PDF cannot open RTF. Open it in WordPad, save it as a Word document "
+           "or plain text, and open that.")
 
 
 def msg_reduced(ow, oh, w, h):
@@ -108,7 +112,15 @@ def embed_image(source):
     try:
         image = Image.open(io.BytesIO(raw))
         image.load()
+    except Image.DecompressionBombError:
+        # Pillow refuses a picture over about 178 million pixels with an
+        # exception that is not an OSError, so a hostile picture in a
+        # docx or a PDF must not crash the load (Overseer round 2,
+        # defect 8).
+        raise ValueError(MSG_TOO_LARGE)
     except (UnidentifiedImageError, OSError, ValueError):
+        raise ValueError(MSG_NOT_A_PICTURE)
+    except Exception:
         raise ValueError(MSG_NOT_A_PICTURE)
     source_format = (image.format or "").upper()
     try:
@@ -156,21 +168,45 @@ def embed_image(source):
 
 
 def _local_path(src, base_folder):
-    """A file system path for an img src that is not a data URI, or None."""
+    """A file system path on this computer for an img src that is not a
+    data URI, or None.
+
+    A source on another computer is refused before anything probes it:
+    os.path.isfile on a UNC path (two backslashes, two slashes, or the
+    device form with a question mark) opens a connection to the named
+    host with the user's credentials the moment a received file is
+    opened, and a file address with a host does the same (Overseer round
+    2, defect 3). The one exception is a document that itself lives on a
+    share: a picture inside that document's own folder is on a host the
+    user already reached, so it is allowed. The rule is checked again
+    after percent decoding, so an encoded UNC path cannot slip through.
+    """
     src = (src or "").strip()
     lowered = src.lower()
     if lowered.startswith(("http:", "https:", "data:", "//", "ftp:", "javascript:", "blob:")):
         return None
+    if htmlclean.is_network_source(src):
+        return None
     if lowered.startswith("file:"):
-        # file:///C:/pictures/x.png becomes C:/pictures/x.png; a Unix style
-        # file:///home/x.png keeps its leading slash.
-        src = src[5:].lstrip("/")
+        # file:///C:/pictures/x.png and file://localhost/C:/pictures/x.png
+        # become C:/pictures/x.png; a Unix style file:///home/x.png keeps
+        # its leading slash.
+        src = re.sub(r"^//localhost(?=/)", "", src[5:], flags=re.IGNORECASE).lstrip("/")
         if not re.match(r"^[A-Za-z]:", src):
             src = "/" + src
     src = unquote(src)
+    if htmlclean.is_network_source(src):
+        return None
     if not os.path.isabs(src) and base_folder:
         src = os.path.join(base_folder, src)
-    return src
+    resolved = os.path.normpath(src)
+    if htmlclean.is_network_source(resolved):
+        if not base_folder or not htmlclean.is_network_source(base_folder):
+            return None
+        base = os.path.normcase(os.path.normpath(base_folder)).rstrip(os.sep) + os.sep
+        if not os.path.normcase(resolved).startswith(base):
+            return None
+    return resolved
 
 
 def embedder_for(base_folder):
@@ -276,6 +312,20 @@ def save(path, body_html, meta):
     return warnings
 
 
+RTF_HEAD = b"{" + bytes([92]) + b"rtf"
+
+
+def is_rtf(path):
+    """An .rtf file, or any file that starts with the RTF signature."""
+    if os.path.splitext(str(path))[1].lower() == ".rtf":
+        return True
+    try:
+        with open(path, "rb") as handle:
+            return handle.read(5).lstrip() == RTF_HEAD
+    except OSError:
+        return False
+
+
 def kind_of(path):
     ext = os.path.splitext(str(path))[1].lower()
     if ext in KINDS:
@@ -360,8 +410,28 @@ def split_page(text):
     for key in PAGE_META:
         value = reader.meta.get("easypdf-" + key.replace("_", "-"))
         if value:
+            value = _page_setting(key, value)
+        if value:
             meta[key] = value
     return meta, body
+
+
+def _page_setting(key, value):
+    """A page setting from a file head, or "" when it is not one Easy
+    PDF would write: the export puts these into the print page's
+    stylesheet, so a received file must not carry anything there but a
+    page size name, a number, or a font family list (Overseer round 2,
+    defect 1)."""
+    value = str(value).strip()
+    if key == "font_family":
+        return value if htmlclean.clean_font_family(value) == value else ""
+    if key == "page_size":
+        return value if value in C.PAGE_SIZES else ""
+    try:
+        float(value)
+    except ValueError:
+        return ""
+    return value
 
 
 def _read_text(path):
@@ -398,7 +468,12 @@ def load(path):
     """(body_html, meta). meta holds title, author, lang, subject,
     source_kind and warnings, plus the page settings a native file
     carried. Raises OSError for a file that cannot be read and ValueError
-    (with a sentence) for a Word file or PDF that cannot be opened."""
+    (with a sentence) for a Word file or PDF that cannot be opened, and
+    for RTF, which is out of 1.0.0 (DECISIONS.md decision 3): opened as
+    text it would be paragraphs of control words with no explanation
+    (Overseer round 2, defect 9)."""
+    if is_rtf(path):
+        raise ValueError(MSG_RTF)
     kind = kind_of(path)
     folder = os.path.dirname(os.path.abspath(path))
     meta = {"title": "", "author": "", "lang": "", "subject": "", "source_kind": kind}

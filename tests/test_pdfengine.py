@@ -10,6 +10,7 @@ is caught here, on the machine it happens on (DECISIONS.md decision 2).
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -111,6 +112,33 @@ if found:
         check("a timeout raises EngineError", False)
     except pdfengine.EngineError as exc:
         check("a timeout raises EngineError with a sentence", "stopped" in str(exc), exc)
+print("\nA timeout stops the whole browser tree")
+if found:
+    # Half a second is long enough for the browser to start its renderer,
+    # GPU and crashpad children and far too short to finish the render,
+    # so this measures that the children go too (Overseer round 2,
+    # defect 7). Under the old code the children outlived msedge.exe and
+    # held the profile folder.
+    started = time.perf_counter()
+    timed_out = False
+    try:
+        pdfengine.render_pdf(PAGE, os.path.join(WORK, "slow2.pdf"), timeout=0.5)
+    except pdfengine.EngineError as exc:
+        timed_out = "stopped" in str(exc)
+    elapsed = time.perf_counter() - started
+    check("half a second is not enough to render, so it timed out", timed_out)
+    check("the profile folder was released and removed straight away (under 4 seconds)",
+          elapsed < 4.0 and not [n for n in os.listdir(tempfile.gettempdir()) if n.startswith("easypdf-render-")],
+          "%.2f seconds" % elapsed)
+    if os.name == "nt":
+        script = ("(Get-CimInstance Win32_Process -Filter \"name='msedge.exe' or name='chrome.exe'\" "
+                  "| Where-Object { $_.CommandLine -like '*easypdf-render-*' } | Measure-Object).Count")
+        proc = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                              capture_output=True, text=True, timeout=90)
+        count = proc.stdout.strip()
+        check("no browser process from the render is still running (PowerShell counted %s)" % count,
+              count == "0", proc.stderr[-300:])
+
 try:
     pdfengine.render_pdf(PAGE, os.path.join(WORK, "no such folder", "x.pdf"))
     check("a missing folder raises EngineError", False)

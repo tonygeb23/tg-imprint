@@ -115,6 +115,14 @@ IMAGE_MIMES = ("image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"
                "image/bmp")
 
 _LANG_RE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$")
+#: A font family list is letters, digits, spaces, commas, quotes and
+#: hyphens. Anything else (a brace, an angle bracket, a semicolon) could
+#: break out of the print page's stylesheet, so it falls back to the
+#: default (Overseer round 2, defect 1).
+_FONT_FAMILY_RE = re.compile(r"^[A-Za-z0-9 ,'\"-]+$")
+#: A source on another computer starts with two separators of either
+#: kind (a UNC path, or the device form backslash backslash question mark).
+_SHARE_RE = re.compile(r"^[\\/]{2}")
 #: Hebrew, Arabic, Syriac, Arabic Supplement and Extended-A, and the two
 #: presentation form blocks, written as escapes so nothing invisible sits
 #: in the source.
@@ -190,6 +198,12 @@ def msg_image_embedded(name):
 def msg_image_missing(name):
     return ("The picture " + _short(name)
             + " was left out because the file could not be found or read.")
+
+
+def msg_image_share(name):
+    return ("The picture " + _short(name) + " is on a network share and was left "
+            "out. Pictures are never fetched from another computer. Copy it to "
+            "this computer and insert it.")
 
 
 def msg_image_type(kind):
@@ -419,16 +433,51 @@ def _fold_span_styles(style):
 
 
 def _valid_href(value):
-    """The address with whitespace and control characters removed, if its
-    scheme is one of the four allowed; else None."""
+    """The address with control characters removed and the ends trimmed,
+    if its scheme is one of the four allowed; else None. A space inside
+    the address (a mailto subject, say) is kept as %20 rather than
+    deleted, so "hello world" does not become "helloworld" (Overseer
+    round 2, defect 10). A newline between "java" and "script:" is a control
+    character, so it still vanishes and the scheme is still refused."""
     if value is None:
         return None
-    cleaned = "".join(ch for ch in value if not ch.isspace() and ord(ch) >= 32)
+    cleaned = "".join(ch for ch in value if ord(ch) >= 32 and ord(ch) != 127).strip()
+    cleaned = re.sub(r" +", "%20", cleaned)
     lowered = cleaned.lower()
     for scheme in ALLOWED_SCHEMES:
         if lowered.startswith(scheme) and len(cleaned) > len(scheme):
             return cleaned
     return None
+
+
+def is_network_source(src):
+    """True for a picture source on another computer: a UNC path with
+    either separator (two backslashes, two slashes, or one of each), a
+    device path (backslash backslash question mark), or a file address
+    whose host is not empty, not localhost and not a drive letter. Shared
+    by the sanitiser and docfile so the rule lives once."""
+    src = (src or "").strip()
+    if src.lower().startswith("file:"):
+        rest = src[5:]
+        if not _SHARE_RE.match(rest):
+            return False  # file:C:/x or file:/home/x, no host part at all
+        host, path = re.match(r"^([^\\/]*)(.*)$", rest[2:], re.DOTALL).groups()
+        if host.lower() in ("", "localhost") or re.match(r"^[A-Za-z]:$", host):
+            # file:///C:/x and file://localhost/x are this machine; the
+            # four slash form file:////server/share is a UNC path again.
+            return bool(_SHARE_RE.match(path))
+        return True
+    return bool(_SHARE_RE.match(src))
+
+
+def clean_font_family(value):
+    """The font family list if it is letters, digits, spaces, commas,
+    quotes and hyphens, else the default. Applied on the way into the
+    document (docfile) and on the way into the print page (pdfexport)."""
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if text and _FONT_FAMILY_RE.match(text):
+        return text
+    return C.DEFAULT_FONT_FAMILY
 
 
 def _clean_lang(value):
@@ -466,6 +515,12 @@ def _image_src(attrs, state):
         return None
     if lowered.startswith(("javascript:", "vbscript:", "blob:", "about:")):
         state.script_seen = True
+        return None
+    if is_network_source(src):
+        # Never probed: os.path.isfile on a UNC path opens a connection to
+        # the named host with the user's credentials the moment the file
+        # is opened (Overseer round 2, defect 3).
+        state.warn(msg_image_share(_name_of(src)))
         return None
     if state.embed is not None:
         data_uri = None

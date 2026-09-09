@@ -22,7 +22,11 @@ one: if the PDF is tagged, a warning says its structure is re-created from
 the layout here, and each page's Figure Alt strings are attached to that
 page's pictures only when the counts match, marked data-alt-source="pdf"
 and still data-needs-alt="1" so Pictures lists them as recovered and to
-be checked. Full tree aware import is out of 1.0.0 (docs/PDF-UA.md).
+be checked. A picture drawn outside tagged content (an artifact, or a
+decorative picture, which Chromium draws outside any marked content) is
+left out of that count, so it never breaks the match for the described
+picture beside it (Overseer round 2, defect 6). Full tree aware import is
+out of 1.0.0 (docs/PDF-UA.md).
 
 Every picture that arrives here needs a description: the img carries
 alt="" and data-needs-alt="1", and ImportedImage.id is "picture-N" for
@@ -102,15 +106,18 @@ def _n(count, one, many):
 
 
 def _tree_pass(path):
-    """(tagged, figure alts per page index, lang, xmp title)."""
+    """(tagged, figure alts per page index, lang, xmp title, image marks
+    per page index). The marks are pdfcheck's [(object number, drawn
+    inside tagged content)] per page, in drawing order."""
     alts = {}
+    marks = {}
     tagged = False
     lang = ""
     title = ""
     try:
         pdf = pikepdf.open(path)
     except Exception:
-        return tagged, alts, lang, title
+        return tagged, alts, lang, title, marks
     try:
         try:
             lang = str(pdf.Root.get("/Lang", "") or "").strip()
@@ -121,8 +128,15 @@ def _tree_pass(path):
                 title = str(meta.get("dc:title") or "").strip()
         except Exception:
             title = ""
-        elements = pdfcheck.walk_tree(pdf, pdfcheck.TextIndex(pdf))
+        index = pdfcheck.TextIndex(pdf)
+        elements = pdfcheck.walk_tree(pdf, index)
         tagged = bool(elements)
+        if tagged:
+            for number in range(len(pdf.pages)):
+                try:
+                    marks[number] = index.image_marks(number)
+                except Exception:
+                    marks[number] = []
         for elem in elements:
             if elem.kind != "/Figure":
                 continue
@@ -135,7 +149,7 @@ def _tree_pass(path):
             alts.setdefault(page, []).append(alt)
     finally:
         pdf.close()
-    return tagged, alts, lang, title
+    return tagged, alts, lang, title, marks
 
 
 # ---------------------------------------------------------------- pictures ---
@@ -164,16 +178,29 @@ def _extract_image(doc, xref):
         return None
 
 
-def _page_pictures(doc, page):
-    """[(y0, x0, width, height, bytes)] for the pictures worth keeping on a
-    page, in drawing order."""
+def _page_pictures(doc, page, marks=()):
+    """[(y0, x0, width, height, bytes, untagged, content_index)] for the
+    pictures worth keeping on a page, in drawing order. untagged is True
+    when the content stream drew the picture outside tagged content (an
+    artifact, or nothing marked at all); content_index counts the tagged
+    pictures in order and is None for an untagged one, so the tree's Alt
+    strings line up with the pictures the tree describes. With no marks
+    (an untagged PDF) every picture counts as tagged, and the caller has
+    no Alt strings to attach anyway."""
     out = []
     try:
         infos = page.get_image_info(xrefs=True)
     except Exception:
         infos = []
+    # The same image object can be drawn more than once; each drawing
+    # takes the next flag recorded for that object.
+    flags = {}
+    for objnum, in_tagged in marks:
+        flags.setdefault(objnum, []).append(in_tagged)
+    content_count = 0
     for info in infos:
         xref = info.get("xref", 0)
+        untagged = not bool(flags[xref].pop(0)) if flags.get(xref) else False
         width, height = int(info.get("width", 0)), int(info.get("height", 0))
         if not xref or width < MIN_IMAGE_SIDE or height < MIN_IMAGE_SIDE:
             continue
@@ -183,7 +210,11 @@ def _page_pictures(doc, page):
         data = _extract_image(doc, xref)
         if not data:
             continue
-        out.append((float(bbox[1]), float(bbox[0]), width, height, data))
+        content_index = None
+        if not untagged:
+            content_index = content_count
+            content_count += 1
+        out.append((float(bbox[1]), float(bbox[0]), width, height, data, untagged, content_index))
     return out
 
 
@@ -366,7 +397,7 @@ def import_pdf(path, progress=None):
 
 def _import_open(doc, path, progress):
     warnings = []
-    tagged, tree_alts, tree_lang, tree_title = _tree_pass(path)
+    tagged, tree_alts, tree_lang, tree_title, tree_marks = _tree_pass(path)
     if tagged:
         warnings.append(MSG_TAGGED)
     page_count = doc.page_count
@@ -397,7 +428,8 @@ def _import_open(doc, path, progress):
                     links.append((fitz.Rect(link["from"]), link["uri"]))
         except Exception:
             links = []
-        pages.append({"blocks": blocks, "links": links, "pictures": _page_pictures(doc, page),
+        pages.append({"blocks": blocks, "links": links,
+                      "pictures": _page_pictures(doc, page, tree_marks.get(number, ())),
                       "shapes": _bullet_shapes(page)})
 
     body_size = size_counts.most_common(1)[0][0] if size_counts else 0.0
@@ -420,7 +452,8 @@ def _import_open(doc, path, progress):
         if not blocks and pictures:
             scanned_pages.append(number + 1)
         page_alts = tree_alts.get(number, []) if tagged else []
-        alts_match = bool(page_alts) and len(page_alts) == len(pictures)
+        described = [p for p in pictures if p[6] is not None]
+        alts_match = bool(page_alts) and len(page_alts) == len(described)
         if page_alts and not alts_match:
             mismatched_pages.append(str(number + 1))
         items = []
@@ -442,7 +475,7 @@ def _import_open(doc, path, progress):
 
         for _y0, _order, kind, payload in ordered:
             if kind == "picture":
-                pic_index, (py0, px0, width, height, data) = payload
+                _pic_index, (py0, px0, width, height, data, _untagged, content_index) = payload
                 try:
                     embedded = docfile.embed_image(data)
                 except ValueError:
@@ -450,8 +483,8 @@ def _import_open(doc, path, progress):
                 picture_number += 1
                 alt = ""
                 source = ""
-                if alts_match and page_alts[pic_index]:
-                    alt = page_alts[pic_index]
+                if alts_match and content_index is not None and page_alts[content_index]:
+                    alt = page_alts[content_index]
                     source = "pdf"
                     recovered += 1
                 if alt:

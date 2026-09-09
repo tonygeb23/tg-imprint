@@ -160,6 +160,107 @@ open(file_uri, "w", encoding="utf-8").write(
 body, _m = docfile.load(file_uri)
 check("a file:/// source is embedded too", 'src="data:image/png;base64,' in body and 'alt="uri"' in body, body[:80])
 
+print("\nPictures on another computer are never probed")
+B = chr(92)
+UNC = B + B + "server" + B + "share" + B + "x.png"
+FORMS = [UNC, B + B + "?" + B + "UNC" + B + "server" + B + "share" + B + "x.png", "//server/share/x.png",
+         "file://server/share/x.png", "file:" + B + B + "server" + B + "share" + B + "x.png",
+         "file:////server/share/x.png", "%5C%5Cserver%5Cshare%5Cx.png", "file:///%5C%5Cserver/share/x.png"]
+probed = []
+real_isfile = os.path.isfile
+
+
+def recording_isfile(path):
+    probed.append(str(path))
+    return real_isfile(path)
+
+
+local_base = "C:" + B + "docs"
+os.path.isfile = recording_isfile
+try:
+    check("every share form returns None from _local_path",
+          all(docfile._local_path(f, local_base) is None for f in FORMS),
+          [(f, docfile._local_path(f, local_base)) for f in FORMS])
+    embed = docfile.embedder_for(local_base)
+    check("and the embedder returns None for each", all(embed(f) is None for f in FORMS))
+    check("nothing on a share was probed", not [p for p in probed if p.startswith((B + B, "//")) or "server" in p], probed)
+finally:
+    os.path.isfile = real_isfile
+check("a file address for this machine still resolves",
+      docfile._local_path("file:///C:/pictures/x.png", local_base) == os.path.normpath("C:/pictures/x.png")
+      and docfile._local_path("file://localhost/C:/pictures/x.png", local_base) == os.path.normpath("C:/pictures/x.png"))
+check("a relative source resolves beside the document",
+      docfile._local_path("pictures/x.png", local_base) == os.path.normpath(os.path.join(local_base, "pictures/x.png")))
+share_base = B + B + "nas" + B + "docs"
+inside = docfile._local_path("pic.png", share_base)
+outside = docfile._local_path(B + B + "other" + B + "share" + B + "x.png", share_base)
+climbed = docfile._local_path(".." + B + ".." + B + "escape.png", share_base)
+check("a document that lives on a share may use a picture in its own folder",
+      inside == os.path.normpath(os.path.join(share_base, "pic.png")), inside)
+check("but not one on another share, nor one that climbs out of its folder",
+      outside is None and (climbed is None or os.path.normcase(climbed).startswith(os.path.normcase(share_base) + os.sep)),
+      (outside, climbed))
+share_page = os.path.join(WORK, "share.html")
+open(share_page, "w", encoding="utf-8").write('<p><img src="%s" alt="share"></p>' % UNC)
+probed = []
+os.path.isfile = recording_isfile
+try:
+    body, meta_share = docfile.load(share_page)
+finally:
+    os.path.isfile = real_isfile
+check("a share picture in a received file is left out with the network share sentence",
+      "<img" not in body and any("network share" in w for w in meta_share["warnings"]), meta_share["warnings"])
+check("and nothing on a share was probed while opening it", not [p for p in probed if "server" in p], probed)
+
+print("\nA picture too large to open")
+real_max = Image.MAX_IMAGE_PIXELS
+Image.MAX_IMAGE_PIXELS = 1000
+try:
+    try:
+        docfile.embed_image(os.path.join(FIXTURES, "circle.png"))
+        check("a picture over the pixel limit raises ValueError", False)
+    except ValueError as exc:
+        check("a picture over the pixel limit raises ValueError with the too large sentence",
+              str(exc) == docfile.MSG_TOO_LARGE, exc)
+    except Exception as exc:
+        check("a picture over the pixel limit raises ValueError, not %s" % type(exc).__name__, False, exc)
+finally:
+    Image.MAX_IMAGE_PIXELS = real_max
+
+print("\nRTF is refused with a sentence")
+try:
+    docfile.load(os.path.join(FIXTURES, "sample.rtf"))
+    check("an .rtf file is refused", False)
+except ValueError as exc:
+    check("an .rtf file is refused with the WordPad sentence", str(exc) == docfile.MSG_RTF, exc)
+disguised = os.path.join(WORK, "disguised.txt")
+open(disguised, "w", encoding="utf-8").write("{" + B + "rtf1" + B + "ansi Hello" + B + "par}")
+try:
+    docfile.load(disguised)
+    check("a .txt that starts with the RTF signature is refused too", False)
+except ValueError as exc:
+    check("a .txt that starts with the RTF signature is refused too", str(exc) == docfile.MSG_RTF)
+check("kind_of keeps its six kinds", docfile.kind_of(os.path.join(FIXTURES, "sample.rtf")) == "text")
+
+print("\nPage settings from a received file are checked on the way in")
+received = os.path.join(WORK, "received.html")
+open(received, "w", encoding="utf-8").write(
+    '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>R</title>'
+    '<meta name="easypdf-font-family" content="Arial}</style><script>alert(1)</script><style>">'
+    '<meta name="easypdf-page-size" content="huge"><meta name="easypdf-margin-inches" content="1in">'
+    '<meta name="easypdf-font-points" content="12"></head><body><p>r</p></body></html>')
+_body, meta_received = docfile.load(received)
+check("a font family that could close the style element is dropped",
+      "font_family" not in meta_received, meta_received.get("font_family"))
+check("a page size that is not one of the app's is dropped, and a margin that is not a number",
+      "page_size" not in meta_received and "margin_inches" not in meta_received)
+check("a font size that is a number is kept", meta_received.get("font_points") == "12")
+good_font = os.path.join(WORK, "good-font" + C.DOC_EXTENSION)
+docfile.save(good_font, "<p>g</p>", dict(meta, font_family='Georgia, "Times New Roman", serif'))
+_body, meta_good = docfile.load(good_font)
+check("a font family of letters, commas and quotes round trips",
+      meta_good.get("font_family") == 'Georgia, "Times New Roman", serif', meta_good.get("font_family"))
+
 print("\nSnapshots")
 real_autosave = paths.autosave_dir
 snap_folder = os.path.join(WORK, "autosave")

@@ -80,6 +80,9 @@ carries a count, the singular and plural forms are both given. Sources:
 - "The picture <name> was copied into the document."
 - "The picture <name> was left out because the file could not be found or
   read."
+- "The picture <name> is on a network share and was left out. Pictures
+  are never fetched from another computer. Copy it to this computer and
+  insert it."
 - "A picture of type <type> was left out because it cannot go into the
   PDF. Save it as PNG or JPEG and insert it."
 - At export: "1 picture description was written by AI and has not been
@@ -125,8 +128,20 @@ carries a count, the singular and plural forms are both given. Sources:
   claim." / "The PDF/UA identifier was left out because these checks did
   not pass: <check>, <check>. The PDF is still tagged. Fix that and
   export again to add the claim."
-- "The PDF could not be written to <path> because the file is open in
-  another program. Close it there and export again."
+- "The PDF could not be written to <path>. Check that the folder allows
+  writing and that the file is not open in another program."
+- "The PDF could not be written to <path>. The system reported: <the
+  system's reason>. The earlier file at that path, if there was one, is
+  untouched."
+- "The PDF engine wrote a PDF without tags, so nothing was saved. Save as
+  web page keeps everything. Try the export again, and if it happens
+  every time, update Microsoft Edge."
+- "The PDF engine wrote a file that could not be read back as a PDF, so
+  nothing was saved. Try the export again, and if it happens every time,
+  update Microsoft Edge."
+- "The PDF could not be finished because a temporary file could not be
+  written. The system reported: <the system's reason>. Nothing was saved.
+  Free some disk space and export again."
 
 ### The checker's report
 
@@ -229,6 +244,9 @@ Details:
   pictures of text. Easy PDF has no text recognition in this release."
 - "This PDF is tagged. Its headings and lists are re-created here from
   the text layout, not from its tags, so check them."
+- "Easy PDF cannot open RTF. Open it in WordPad, save it as a Word
+  document or plain text, and open that." (any file with the .rtf
+  extension or the RTF signature; RTF is out of 1.0.0, decision 3)
 - "1 picture description was recovered from the PDF's tags. Check each
   one in Pictures." / "N picture descriptions were recovered from the
   PDF's tags. Check each one in Pictures."
@@ -256,6 +274,8 @@ Details:
 
 - "That file is not a picture Easy PDF can read. PNG, JPEG, GIF, BMP and
   WebP pictures work."
+- "That picture is too large to open. Pictures over about 178 million
+  pixels are refused. Reduce it in another program and insert it again."
 - The note the Insert picture dialog shows when a picture was reduced:
   "Reduced from 4,000 by 3,000 to 2,000 by 1,500 pixels." (the numbers
   vary; empty when nothing was reduced)
@@ -344,18 +364,18 @@ and count as strings to approve too.
 - "The user guide is not published yet."
 - "You have the newest version.", "Update skipped. Help, check for updates
   when you are ready.", "The download was stopped. Nothing was changed.",
-  "Download failed. <reason>", "The download was fine but it could not be
-  unpacked. <reason>", "Update left for later. The download is kept.",
-  "The new copy would not start, so nothing has been changed. It is
-  unpacked in <folder>.", "Updating. Easy PDF will open again in a moment."
-- Update ready, portable copy: "Version 1.1.0 is ready. Easy PDF will
-  close and open again on the new version, in the same folder. Your
-  settings are untouched. Update now?" with "Update now" and "Later".
-- Update ready, read only folder: "This folder cannot be written to, so
-  version 1.1.0 has been unpacked next to it instead, in <folder>. Close
-  this copy and run Easy PDF from that folder. Your settings are shared,
-  so everything is where you left it. Open that folder now?" with "Open
-  the folder" and "Later".
+  "Download failed. <reason>", "Updating. Easy PDF will close and open
+  again by itself." (Velopack applies the update and restarts the app;
+  there is no portable swap and no second question, 2026-09-09).
+- After that restart, once, on the help channel: "Updated to version
+  1.1.0." If a modified document was open when the update ran, its
+  autosave snapshot is offered back through the recovery dialog below.
+- The messages Velopack's client itself returns, shown in the "Update
+  failed" dialog: "Check for updates first. Nothing was changed.",
+  "Download the update first. Nothing was changed.", "Installing. The app
+  will close and reopen by itself.", "Could not start the update.
+  <reason>", and the check's own sentences (appupdate.py, the
+  coordinator's file).
 - "Recovered <name>. Save it somewhere safe.", "The recovered documents
   were deleted."
 - Guards until the other modules land: "The PDF export is not part of this
@@ -394,7 +414,10 @@ and count as strings to approve too.
 - About: "Easy PDF 1.0.0", the tagline, "TG Studios", "PDF engine:
   Microsoft Edge 152.0.4191.66" or "none found. Install Microsoft Edge or
   Google Chrome to make PDFs." or "not checked (the engine module is not
-  part of this build yet).", then "A TG Studios program. Questions and
+  part of this build yet).", then "Updates: <appupdate.channel_state()>",
+  which is "source build, correctly disabled", "frozen but not installed
+  by Velopack, so it cannot update itself" or "live, installed copy" (or
+  "live, portable copy"), then "A TG Studios program. Questions and
   reports to hello@tgstudios.app. Tested with NVDA." and the home page
   address. Field label "About".
 - Keyboard shortcuts (F1): the F1 text generated from keymap.py, including
