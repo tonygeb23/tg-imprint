@@ -54,11 +54,12 @@ CHANNEL = "win"
 # Tony's voice and is listed in docs/STRINGS.md for his approval before it
 # ships.
 NOTES = {
-    "1.0.0": ("The first release. Write a document with headings, lists, "
-              "links and pictures, and export a tagged PDF that screen "
-              "readers can read. Open a PDF somebody sent you and make it "
-              "accessible. Describe pictures with Claude, ChatGPT or Gemini "
-              "on your own key."),
+    "0.1.0": ("The first open beta. Write a document with headings, lists, "
+              "links and pictures, and export a PDF that screen readers can "
+              "read properly. Every picture needs a description, and Claude, "
+              "ChatGPT or Gemini can write a first draft of one on your own "
+              "key. Open a PDF, a Word file, Markdown or plain text and make "
+              "it accessible. It is a beta: tell me what breaks."),
 }
 
 

@@ -1,8 +1,9 @@
 # Changelog
 
-## 1.0.0 (unreleased)
+## 0.1.0, open beta (2026-09-09)
 
-The first TG Studios release, revived from the April 2026 prototype.
+The first public build, an open beta. Revived from an April 2026
+prototype and renamed from Easy PDF.
 
 - One editor, a WebView2 page, so a screen reader hears headings, lists and
   links while writing.

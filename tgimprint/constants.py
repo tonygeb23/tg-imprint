@@ -11,7 +11,7 @@ the first release.
 # decision 6 records that the name collides with an existing product and
 # is Tony's to settle before the first publish.
 APP_NAME = "TG Imprint"
-APP_VERSION = "1.0.0"
+APP_VERSION = "0.1.0"
 VENDOR = "TG Studios"
 #: docs/STRINGS.md: draft, needs approval.
 TAGLINE = "Write a document, get a PDF that screen readers can read."

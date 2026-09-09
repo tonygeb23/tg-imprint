@@ -6,7 +6,7 @@ Every key works while you are typing in the document. The same keys are in the m
 
 ## The headings and the AltGr rule
 
-Ctrl+Alt+1 to Ctrl+Alt+6 set heading levels 1 to 6, Ctrl+Alt+0 makes normal text, Ctrl+Alt+8 a bullet list and Ctrl+Alt+9 a numbered list. On German, French, Polish, Spanish and Portuguese keyboards Ctrl+Alt is AltGr and some of those chords type a character instead, so TG Imprint acts on them only when the key really was the digit. The same commands are also on Ctrl+Shift+0 to Ctrl+Shift+9, which work on every layout.
+Ctrl+Alt+1 to Ctrl+Alt+6 set heading levels 1 to 6, Ctrl+Alt+0 makes normal text, Ctrl+Alt+8 a bullet list and Ctrl+Alt+9 a numbered list. On German, French, Polish, Spanish and Portuguese keyboards Ctrl+Alt is AltGr and some of those chords type a character instead, so Easy PDF acts on them only when the key really was the digit. The same commands are also on Ctrl+Shift+0 to Ctrl+Shift+9, which work on every layout.
 
 ## Inside lists and tables
 
@@ -19,7 +19,7 @@ Enter at the end of a heading starts a normal paragraph. Enter on an empty list 
 | File | New | Ctrl+N | Start a new, empty document. |
 | File | Open... | Ctrl+O | Open a document: .imprint, .html, .txt, .md, .docx or .pdf. |
 | File | Save | Ctrl+S | Save the document. |
-| File | Save As... | Ctrl+Shift+S | Save the document under a new name, as an TG Imprint document. |
+| File | Save As... | Ctrl+Shift+S | Save the document under a new name, as a TG Imprint document. |
 | File | Save as web page... |  | Write the same document to a .html file any browser can open. |
 | File | Close document | Ctrl+W | Close the document and start an empty one. |
 | File | Export PDF... | Ctrl+Shift+E | Make the tagged PDF and check it. |

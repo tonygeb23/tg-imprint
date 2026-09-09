@@ -42,7 +42,7 @@ PDF somebody sent you and helps you make it accessible.
   key, and edit what comes back. Nothing leaves your machine without
   asking you first.
 - Open a PDF, a Word document, a Markdown file, a web page or plain text,
-  and save it as an TG Imprint document. A PDF that arrived with no picture
+  and save it as a TG Imprint document. A PDF that arrived with no picture
   descriptions gets a list of the pictures that need one.
 - Free. If it earns its keep, there is a [donate page](/donate/).
 

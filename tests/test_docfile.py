@@ -78,7 +78,7 @@ check("save returns the sanitiser's warnings", warnings == [], warnings)
 check("the file is a whole page with the meta in its head",
       text.startswith("<!DOCTYPE html>\n<html lang=\"en-US\">") and "<title>Sample document</title>" in text
       and '<meta name="author" content="Tony">' in text and '<meta name="description" content="A fixture">' in text
-      and '<meta name="generator" content="TG Imprint 1.0.0">' in text and '<meta charset="utf-8">' in text)
+      and ('<meta name="generator" content="TG Imprint %s">' % C.APP_VERSION) in text and '<meta charset="utf-8">' in text)
 check("page settings travel in the head",
       '<meta name="tgimprint-page-size" content="A4">' in text and '<meta name="tgimprint-margin-inches" content="0.75">' in text)
 check("it carries a stylesheet and a body", "<style>" in text and "<body>" in text and text.rstrip().endswith("</html>"))

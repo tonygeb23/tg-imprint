@@ -95,7 +95,7 @@ S = {
     "picture_pasted": "Picture pasted. It needs a description.",
     "new_document": "New document.",
     "opened": "Opened %s.",
-    "opened_from": "Opened from %s. Save will write an TG Imprint document.",
+    "opened_from": "Opened from %s. Save will write a TG Imprint document.",
     "opening": "Opening %s.",
     "open_failed": "Could not open %s. %s",
     "saved": "Saved %s.",

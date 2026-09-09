@@ -340,7 +340,7 @@ and count as strings to approve too.
   headings before this", "No headings in the document yet."
 - "Pasted. <first note from the cleaner>", "Nothing on the clipboard to
   paste.", "Picture pasted. It needs a description."
-- "Opened from Word. Save will write an TG Imprint document." (also "a web
+- "Opened from Word. Save will write a TG Imprint document." (also "a web
   page", "a text file", "Markdown", "a PDF").
 - "Could not open <name>. <reason>", "Could not save <name>. <reason>".
 - "The PDF needs a title first.", "Export cancelled: a title is needed.",

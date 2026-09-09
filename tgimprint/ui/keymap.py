@@ -88,7 +88,7 @@ ENTRIES = [
       "Open a document: .imprint, .html, .txt, .md, .docx or .pdf."),
     E("save", "&Save", ("Ctrl+S",), "app", "Save the document."),
     E("save_as", "Save &As...", ("Ctrl+Shift+S",), "app",
-      "Save the document under a new name, as an TG Imprint document."),
+      "Save the document under a new name, as a TG Imprint document."),
     E("save_web_page", "Save as &web page...", (), "app",
       "Write the same document to a .html file any browser can open."),
     E("close_document", "&Close document", ("Ctrl+W",), "app",

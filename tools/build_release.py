@@ -197,7 +197,7 @@ def copy_payload():
     # them and a person can find them without the app.
     docs_out = os.path.join(BUNDLE, "docs")
     os.makedirs(docs_out, exist_ok=True)
-    for name in ("DESCRIBER.md", "KEYBOARD.md", "PDF-UA.md"):
+    for name in ("MANUAL.md", "DESCRIBER.md", "KEYBOARD.md", "PDF-UA.md"):
         source = os.path.join(HERE, "docs", name)
         if os.path.exists(source):
             shutil.copy2(source, os.path.join(docs_out, name))
