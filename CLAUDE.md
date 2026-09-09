@@ -37,6 +37,12 @@ string awaiting Tony's approval.
 - **Never ship an untagged PDF.** If no Chromium browser can be found, say so
   and offer the HTML; an accessibility product that quietly produces an
   inaccessible file is worse than one that refuses.
+- **Only sanitised HTML enters the editor page, and the page carries a
+  Content Security Policy.** A received file ran its `onerror` handler
+  inside the editor when loaded raw (CHALLENGE.md W11). Load, paste,
+  import, save and export all go through `htmlclean.normalise`.
+- **The native document is `.epdf`**, self-contained HTML inside a file
+  type the installer registers. `.html` is an import and an export.
 - **The frozen block in `easypdf/constants.py` and the AppId GUID in
   `tools/easypdf.iss` never change.** `tests/test_scaffold.py` asserts them.
 - **Runs on the global Python 3.13.5, no venv**, like the other apps.
@@ -55,10 +61,22 @@ string awaiting Tony's approval.
 - **PyMuPDF writes no structure tree** (its Story API), so it is only ever
   the reader. **WeasyPrint needs a GTK runtime that is not here** and is
   not used.
-- **wx.html2's Edge backend works:** synchronous `RunScript`,
-  `AddScriptMessageHandler` and the JS to Python bridge, `execCommand`
-  (which emits `<b>` and `<i>`, not `<strong>` and `<em>`; normalise on
-  save and export).
+- **wx.html2's Edge backend works:** `AddScriptMessageHandler`, the JS
+  to Python bridge, `RunScriptAsync` with `EVT_WEBVIEW_SCRIPT_RESULT`, and
+  `execCommand`. **Synchronous `RunScript` works before the editor has
+  focus and hung in two of four focused runs with NVDA running**
+  (CHALLENGE.md W2), so the editor API is asynchronous, always.
+- **`execCommand` emits `<b>`, `<i>`, `<font>` and `<div>`, and Chromium
+  tags `b`, `i`, `u`, `span lang`, `div` and `pre` as nothing in the PDF**
+  (a div's text lands in NonStruct with no P; measured 2026-09-09 by the
+  Challenger and again by the Overseer). Only `strong`, `em`, `code`, `a`,
+  headings, `p`, lists, `blockquote`, `figure` and tables are tagged. So
+  normalisation before save and export is mandatory, not tidy-up.
+- **With the WebView2 focused, no wx accelerator fires at all** (W4); the
+  page sees every key, Chromium's own bindings act first (W5), and F5,
+  Ctrl+F and Ctrl+P damage or hijack the document (W6). The whole keyboard
+  contract lives in the page, in a capture-phase keydown handler that
+  calls preventDefault and forwards to Python.
 - **Never touch the WebView after its frame has closed.** A probe that
   called a WebView method after `MainLoop` returned segfaulted (exit 139)
   with no output. A normal frame close is clean; `app.Destroy()` after the

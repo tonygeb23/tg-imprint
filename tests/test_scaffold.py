@@ -40,10 +40,24 @@ check("the zip is named Easy-PDF-<version>-windows.zip",
 check("the version has three parts",
       len(C.APP_VERSION.split(".")) == 3 and all(p.isdigit() for p in C.APP_VERSION.split(".")),
       C.APP_VERSION)
+check("the document ProgId is frozen", C.DOC_PROGID == "TGStudios.EasyPDF.Document", C.DOC_PROGID)
+check("the settings folder name is frozen, apart from the display name",
+      C.CONFIG_FOLDER_NAME == "Easy PDF", C.CONFIG_FOLDER_NAME)
+
+print("\nThe file types")
+check("the native document is .epdf", C.DOC_EXTENSION == ".epdf")
+check("Open takes .epdf and .docx", ".epdf" in C.IMPORT_EXTENSIONS and ".docx" in C.IMPORT_EXTENSIONS)
+check("and not .rtf, which is out of 1.0.0", ".rtf" not in C.IMPORT_EXTENSIONS)
+check("pictures are downscaled to 2000 pixels", C.IMAGE_MAX_EDGE == 2000 and 50 <= C.IMAGE_JPEG_QUALITY <= 95)
 
 iss = open(os.path.join(HERE, "tools", "easypdf.iss"), encoding="utf-8").read()
 check("the installer AppId GUID is the frozen one",
       "{{B194AFF3-AC8A-464F-9440-FB09CC0CDF62}" in iss)
+check("the installer registers the .epdf type with the frozen ProgId",
+      "ChangesAssociations=yes" in iss
+      and 'Subkey: "Software\\Classes\\.epdf"' in iss
+      and 'ValueData: "TGStudios.EasyPDF.Document"' in iss
+      and 'Subkey: "Software\\Classes\\TGStudios.EasyPDF.Document\\shell\\open\\command"' in iss)
 check("the installer output name agrees with the constants",
       "OutputBaseFilename=EasyPDF-{#AppVersion}-Setup" in iss)
 check("the installer is per user with no admin prompt",
@@ -125,6 +139,26 @@ check("autosave is under local AppData, not roaming",
       "Local" in paths.autosave_dir() and os.path.isdir(paths.autosave_dir()))
 check("running from source is not frozen", paths.is_frozen() is False)
 check("the app folder is the repository", os.path.samefile(paths.app_folder(), HERE))
+
+print("\nThe clean exit marker")
+# Point the marker at a throwaway folder so this never touches the real one.
+real_local = paths.local_dir
+scratch = tempfile.mkdtemp()
+paths.local_dir = lambda: scratch
+try:
+    paths.mark_started()
+    paths.mark_clean_exit()
+    check("a start followed by a clean exit leaves no marker",
+          not paths.last_run_crashed())
+    first = paths.mark_started()
+    check("and the next start knows the last run was clean", first is False)
+    # No clean exit this time: the next start must notice.
+    second = paths.mark_started()
+    check("a marker left behind makes the next start report a crash",
+          second is True and paths.PREVIOUS_RUN_CRASHED is True)
+    paths.mark_clean_exit()
+finally:
+    paths.local_dir = real_local
 
 
 print("\nThe icon")

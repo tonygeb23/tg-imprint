@@ -30,6 +30,16 @@ string **approved** only when Tony has said so.
   wording, approved there.
 - Credential Manager entry comment: "An AI service key kept by Easy PDF.
   Safe to delete." Status: draft.
+- File type description, shown by Explorer for .epdf files: "Easy PDF
+  document". Status: draft.
+- Startup guard, when the WebView2 runtime is missing (a dialog with a
+  read-only field): "<reason> Easy PDF needs the Microsoft Edge WebView2
+  runtime, which is part of Windows 11 and a free download for Windows
+  10. Install it from this address, then open Easy PDF again:
+  https://developer.microsoft.com/microsoft-edge/webview2/ The address
+  has been copied to the clipboard." Status: draft.
+- Second launch with a document while the app is open: no words; the
+  running copy opens it.
 
 ## Worker A (PDF pipeline)
 

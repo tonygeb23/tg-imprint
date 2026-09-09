@@ -113,6 +113,50 @@ check("a message from something else is refused",
 check("sending to no window is refused", handoff.send_path(0, DOC) is False)
 receiver.remove()
 check("the original procedure is restored", not receiver.installed)
+
+print("\nA slow opener does not hold the second launch")
+# The Overseer's K5: open_document may put up the unsaved-changes prompt.
+# Run inside the message, that prompt would hold the SENDING process in its
+# SendMessageTimeout until it was answered (or the five second timeout),
+# which reads as a failed hand-over. main.py therefore installs the opener
+# behind wx.CallAfter; this is that arrangement, with a two second sleep
+# standing in for the prompt. The child must still be told "sent True" and
+# finish well inside two seconds.
+import time   # noqa: E402
+slow_got = []
+
+
+def slow_opener(path):
+    time.sleep(2.0)
+    slow_got.append(path)
+
+
+deferred = handoff.Receiver(frame, lambda path: wx.CallAfter(slow_opener, path))
+timing = {}
+
+
+def run_second_launch_timed():
+    started = time.monotonic()
+    result = subprocess.run([sys.executable, "-c", SECOND_LAUNCH],
+                            capture_output=True, text=True, encoding="utf-8",
+                            cwd=HERE, timeout=30)
+    timing["seconds"] = time.monotonic() - started
+    timing["out"] = result.stdout + result.stderr
+    wx.CallAfter(wx.CallLater, 2600, app.ExitMainLoop)
+
+
+wx.CallLater(100, lambda: threading.Thread(target=run_second_launch_timed,
+                                           daemon=True).start())
+wx.CallLater(15000, app.ExitMainLoop)
+app.MainLoop()
+child_seconds = timing.get("seconds", 99.0)
+# The child process itself takes about a second to start Python and import
+# wx, so the budget is the startup cost plus a little, well under the two
+# second sleep plus the five second timeout that a blocking callback costs.
+check("the second launch was told the path was taken", "sent True" in timing.get("out", ""))
+check("and returned before the opener finished", child_seconds < 1.9, "%.2fs" % child_seconds)
+check("while the opener still ran, on the UI thread, afterwards", slow_got == [DOC])
+deferred.remove()
 frame.Destroy()
 instance.release()
 

@@ -41,7 +41,7 @@ def config_dir():
     the machine that crashed.
     """
     base = os.environ.get("APPDATA") or os.path.expanduser("~")
-    path = os.path.join(base, C.VENDOR, C.APP_NAME)
+    path = os.path.join(base, C.VENDOR, C.CONFIG_FOLDER_NAME)
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -49,7 +49,7 @@ def config_dir():
 def local_dir():
     base = (os.environ.get("LOCALAPPDATA")
             or os.path.join(os.path.expanduser("~"), "AppData", "Local"))
-    path = os.path.join(base, C.VENDOR, C.APP_NAME)
+    path = os.path.join(base, C.VENDOR, C.CONFIG_FOLDER_NAME)
     os.makedirs(path, exist_ok=True)
     return path
 

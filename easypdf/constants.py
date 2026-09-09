@@ -1,12 +1,15 @@
 """Names and the few values every part of Easy PDF has to agree on.
 
 Everything user-visible here is a draft until Tony has read it: see
-docs/STRINGS.md. The frozen block is different: it may never change.
+docs/STRINGS.md. The frozen block is different: it may never change after
+the first release.
 """
 
 # The display name. One constant, so renaming the product is one line here
 # and nothing else. It is NOT used to derive anything that has to stay
-# stable; that is what the frozen block below is for.
+# stable; that is what the frozen block below is for. docs/DECISIONS.md
+# decision 6 records that the name collides with an existing product and
+# is Tony's to settle before the first publish.
 APP_NAME = "Easy PDF"
 APP_VERSION = "1.0.0"
 VENDOR = "TG Studios"
@@ -20,13 +23,23 @@ TAGLINE = "Write a document, get a PDF that screen readers can read."
 # build has to recognise an older build already running. FEED_SLUG names the
 # update manifest on tgstudios.app, so every installed copy keeps finding its
 # feed. APP_USER_MODEL_ID is how the Windows taskbar groups the app's windows
-# and pins it. The installer's AppId GUID lives in tools/easypdf.iss and is
-# frozen for the same reason: a changed GUID installs alongside the old copy
-# instead of over it. tests/test_scaffold.py asserts every one of these.
+# and pins it. DOC_PROGID is the registry ProgId behind the .epdf file type;
+# a changed ProgId orphans the old key on every machine. CONFIG_FOLDER_NAME
+# is the settings folder under TG Studios; a display rename after release
+# must not move everybody's settings. The installer's AppId GUID lives in
+# tools/easypdf.iss and is frozen for the same reason: a changed GUID
+# installs alongside the old copy instead of over it.
+# tests/test_scaffold.py asserts every one of these.
+#
+# Until the first publish these CAN still change, together, if Tony renames
+# the product: this block, tools/easypdf.iss (names, not the GUID),
+# tests/test_scaffold.py, and the TG Stats download rules.
 # ---------------------------------------------------------------------------
 INSTANCE_SLUG = "EasyPDF"
 FEED_SLUG = "easy-pdf"
 APP_USER_MODEL_ID = "TGStudios.EasyPDF.1"
+DOC_PROGID = "TGStudios.EasyPDF.Document"
+CONFIG_FOLDER_NAME = "Easy PDF"
 #: EasyPDF-1.0.0-Setup.exe and Easy-PDF-1.0.0-windows.zip. Hyphens rather
 #: than spaces because these names become URLs, scp arguments and TG Stats
 #: download rules, and a space escapes differently in each.
@@ -35,29 +48,36 @@ ZIP_BASENAME = "Easy-PDF"
 
 # Where the app sends people. The guide and the product page do not exist
 # until the release that publishes them; the Help menu says so rather than
-# opening a 404 (Worker B: check the page before offering the link, or word
-# the item as "on the web, when published").
+# opening a 404.
 HOME_URL = "https://tgstudios.app/easy-pdf/"
 USER_GUIDE_URL = "https://tgstudios.app/easy-pdf-guide/"
 DONATE_URL = "https://tgstudios.app/donate/"
 FEEDBACK_EMAIL = "hello@tgstudios.app"
+WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
 
 # ------------------------------------------------------------------ files ---
-#: The native document format: self-contained UTF-8 HTML. It opens in any
-#: browser, so nobody's writing is ever trapped in this app.
-DOC_EXTENSION = ".html"
-DOC_WILDCARD = "Easy PDF documents (*.html)|*.html"
+#: The native document: self-contained UTF-8 HTML inside a file type the app
+#: owns, so double clicking one opens Easy PDF rather than a browser or a
+#: mail filter's suspicion. It is still HTML: rename it .html and any
+#: browser reads it, so nobody's writing is ever trapped in this app.
+DOC_EXTENSION = ".epdf"
+DOC_WILDCARD = "Easy PDF documents (*.epdf)|*.epdf"
+WEB_PAGE_WILDCARD = "Web page (*.html)|*.html"
+#: docs/STRINGS.md: draft. What Explorer shows as the file type.
+DOC_TYPE_DESCRIPTION = "Easy PDF document"
 #: What Open will take. Anything not native is imported and then saved as
 #: native on the first Save.
-IMPORT_EXTENSIONS = (".html", ".htm", ".txt", ".md", ".markdown", ".rtf", ".pdf")
+IMPORT_EXTENSIONS = (".epdf", ".html", ".htm", ".txt", ".md", ".markdown",
+                     ".docx", ".pdf")
 OPEN_WILDCARD = (
-    "All documents (*.html;*.htm;*.txt;*.md;*.rtf;*.pdf)|"
-    "*.html;*.htm;*.txt;*.md;*.markdown;*.rtf;*.pdf|"
-    "Easy PDF documents (*.html)|*.html|"
+    "All documents (*.epdf;*.html;*.htm;*.txt;*.md;*.docx;*.pdf)|"
+    "*.epdf;*.html;*.htm;*.txt;*.md;*.markdown;*.docx;*.pdf|"
+    "Easy PDF documents (*.epdf)|*.epdf|"
+    "Web pages (*.html;*.htm)|*.html;*.htm|"
     "PDF files (*.pdf)|*.pdf|"
+    "Word documents (*.docx)|*.docx|"
     "Markdown (*.md)|*.md;*.markdown|"
     "Plain text (*.txt)|*.txt|"
-    "Rich Text (*.rtf)|*.rtf|"
     "All files (*.*)|*.*"
 )
 PDF_WILDCARD = "PDF files (*.pdf)|*.pdf"
@@ -65,6 +85,12 @@ PDF_WILDCARD = "PDF files (*.pdf)|*.pdf"
 RECENT_FILES = 8
 #: Seconds between autosave snapshots of an unsaved document.
 AUTOSAVE_SECONDS = 60
+#: Pictures are downscaled when they come in. A phone photo is 4000 pixels
+#: wide and a page is 8.5 inches; 2000 pixels across the text width is
+#: still 300 dots per inch on paper, and five phone photos measured at full
+#: size made a 5 MB PDF and a 7 MB document (CHALLENGE.md E8).
+IMAGE_MAX_EDGE = 2000
+IMAGE_JPEG_QUALITY = 85
 
 # ----------------------------------------------------------------- speech ---
 #: One setting, three levels, worded as CONVENTIONS.md says. Three channels:

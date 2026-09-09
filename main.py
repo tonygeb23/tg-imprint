@@ -1,7 +1,7 @@
 """Easy PDF: accessible documents and tagged PDFs. A TG Studios program.
 
     python main.py                       open a blank document
-    python main.py <file>                open that file (html, txt, md, rtf, pdf)
+    python main.py <file>                open that file (epdf, html, txt, md, docx, pdf)
     python main.py --selftest --selftest-out report.txt
 """
 
@@ -304,6 +304,64 @@ def selftest():  # noqa: C901
     return 1 if problems else 0
 
 
+def webview_missing():
+    """Why the editor cannot load, as a sentence, or an empty string.
+
+    Two things can be missing and both fail silently otherwise: the WebView2
+    runtime on the machine (Windows 10 without it), and WebView2Loader.dll
+    in a frozen build. Either leaves an empty grey editor that never loads.
+    """
+    try:
+        import wx.html2 as webview
+        if not webview.WebView.IsBackendAvailable(webview.WebViewBackendEdge):
+            return "The Microsoft Edge WebView2 runtime is not installed."
+    except Exception as exc:
+        return "The editor component could not be loaded. %s" % exc
+    from easypdf import paths
+    if paths.is_frozen():
+        beside = os.path.join(paths.resource("wx"), "WebView2Loader.dll")
+        if not os.path.exists(beside):
+            return ("This copy of %s is missing WebView2Loader.dll, so the "
+                    "editor cannot start. Reinstall the app." % C.APP_NAME)
+    return ""
+
+
+def show_startup_guard(parent, reason):
+    """A dialog with a read-only field, not a MessageBox, so the address can
+    be read back and is on the clipboard."""
+    message = ("%s\n\n%s needs the Microsoft Edge WebView2 runtime, which is "
+               "part of Windows 11 and a free download for Windows 10. "
+               "Install it from this address, then open %s again:\n\n%s\n\n"
+               "The address has been copied to the clipboard."
+               % (reason, C.APP_NAME, C.APP_NAME, C.WEBVIEW2_URL))
+    try:
+        if wx.TheClipboard.Open():
+            wx.TheClipboard.SetData(wx.TextDataObject(C.WEBVIEW2_URL))
+            wx.TheClipboard.Close()
+    except Exception:
+        pass
+    dialog = wx.Dialog(parent, title="%s cannot start" % C.APP_NAME,
+                       style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
+    outer = wx.BoxSizer(wx.VERTICAL)
+    outer.Add(wx.StaticText(dialog, label="&Message"), 0,
+              wx.LEFT | wx.RIGHT | wx.TOP, 10)
+    field = wx.TextCtrl(dialog, value=message,
+                        style=wx.TE_READONLY | wx.TE_MULTILINE, size=(480, 200))
+    outer.Add(field, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+    buttons = wx.StdDialogButtonSizer()
+    close = wx.Button(dialog, wx.ID_OK, "&Close")
+    buttons.AddButton(close)
+    buttons.Realize()
+    close.SetDefault()
+    outer.Add(buttons, 0, wx.ALL | wx.ALIGN_RIGHT, 10)
+    dialog.SetSizerAndFit(outer)
+    dialog.CentreOnScreen()
+    field.SetFocus()
+    field.SetInsertionPoint(0)
+    dialog.ShowModal()
+    dialog.Destroy()
+
+
 class EasyPdfApp(wx.App):
     def __init__(self, instance, open_path=None, **kw):
         self.instance = instance
@@ -313,6 +371,10 @@ class EasyPdfApp(wx.App):
     def OnInit(self):
         self.SetAppName(C.APP_NAME)
         self.SetVendorName(C.VENDOR)
+        reason = webview_missing()
+        if reason:
+            show_startup_guard(None, reason)
+            return False
         frame = build_main_window(self.open_path)
         # Mark this window as the one a second launch should reopen.
         self.instance.tag_window(frame)
@@ -321,7 +383,17 @@ class EasyPdfApp(wx.App):
         # after the window is raised, which is what the April build did.
         from easypdf import handoff
         opener = getattr(frame, "open_document", None)
-        self.receiver = handoff.Receiver(frame, opener) if opener else None
+        if opener is not None:
+            # Deferred, not called inside the message. open_document may
+            # put up the unsaved-changes prompt, and a prompt inside a
+            # WM_COPYDATA handler holds the SENDING process in its
+            # SendMessageTimeout until the user answers, which reads to the
+            # second launch as a failed hand-over. Take the path, answer the
+            # message, then open the file on the next turn of the loop.
+            self.receiver = handoff.Receiver(
+                frame, lambda path: wx.CallAfter(opener, path))
+        else:
+            self.receiver = None
         frame.Show()
         self.SetTopWindow(frame)
         return True

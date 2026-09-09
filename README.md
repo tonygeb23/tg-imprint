@@ -5,6 +5,11 @@ tagged PDF that screen readers can read. Open a PDF somebody sent you and
 make it accessible. Describe pictures with Claude, ChatGPT or Gemini on your
 own key. A TG Studios program for Windows.
 
+Documents are `.epdf` files: self-contained HTML inside a file type the
+app owns, so a double click opens Easy PDF. Rename one to `.html` and any
+browser reads it. The installer registers the type; the zip copy does not,
+so from the zip open documents from inside the app.
+
 ## Running from source
 
 Python 3.13 with the packages in `requirements.txt`:

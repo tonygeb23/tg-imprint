@@ -56,6 +56,8 @@ UninstallDisplayIcon={app}\{#AppExeName}
 ; update fails silently because the exe is locked.
 CloseApplications=yes
 RestartApplications=yes
+; The .epdf file type is registered below, per user.
+ChangesAssociations=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -79,6 +81,16 @@ Filename: "{app}\{#AppExeName}"; Description: "Open {#AppName}"; Flags: nowait p
 ; rather than made unconditional, so somebody running the installer silently
 ; from a script does not get a window they did not ask for.
 Filename: "{app}\{#AppExeName}"; Flags: nowait; Check: WantsRestart
+
+[Registry]
+; The document type, per user, so a double click on an .epdf opens the app
+; and Explorer shows its icon and description. The ProgId is frozen
+; (constants.DOC_PROGID); a changed ProgId orphans the old key on every
+; machine. The zip copy registers nothing and the README says so.
+Root: HKCU; Subkey: "Software\Classes\.epdf"; ValueType: string; ValueName: ""; ValueData: "TGStudios.EasyPDF.Document"; Flags: uninsdeletevalue uninsdeletekeyifempty
+Root: HKCU; Subkey: "Software\Classes\TGStudios.EasyPDF.Document"; ValueType: string; ValueName: ""; ValueData: "Easy PDF document"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\TGStudios.EasyPDF.Document\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"",0"
+Root: HKCU; Subkey: "Software\Classes\TGStudios.EasyPDF.Document\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
 
 [UninstallDelete]
 ; Only the installed program. Settings, recent files and autosave snapshots

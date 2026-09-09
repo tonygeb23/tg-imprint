@@ -44,9 +44,11 @@ final report to Tony.
    Workers fix. Repeat once.
 6. Coordinator integrates, runs every test file, builds, selftests the
    frozen build, installs it to a throwaway folder and runs it.
-7. Overseer runs the screen reader audit with NVDA running; Challenger runs
-   the visual and mouse audit with screenshots. Both prove input arrived
-   before trusting a result (`AttachThreadInput`, then a control test).
+7. Overseer runs the screen reader audit with NVDA running, plus a
+   Windows High Contrast pass and a Narrator pass; Challenger runs the
+   visual and mouse audit with screenshots at 150 percent and once at 200
+   percent. Both prove input arrived before trusting a result
+   (`AttachThreadInput`, then a control test).
 8. Coordinator reconciles the two audits against its own measurement,
    fixes what is real, adds a regression test per real finding, rebuilds.
 9. Coordinator: rehearse the release (no upload), private repo and push,
@@ -60,12 +62,19 @@ coordinator makes it at integration.
 
 | Owner | Files |
 |---|---|
-| Coordinator | `main.py`, `launch.pyw`, `easypdf/constants.py`, `easypdf/singleinstance.py`, `easypdf/appupdate.py`, `easypdf/updatedialog.py`, `easypdf/speech.py`, `easypdf/secrets.py`, `easypdf/appicon.py`, `easypdf/paths.py`, `tools/*`, `tests/test_update.py`, `tests/test_scaffold.py`, `CLAUDE.md`, `README.md`, `CHANGELOG.md`, `.gitignore` |
-| Worker A | `easypdf/pdfengine.py`, `easypdf/pdfexport.py`, `easypdf/pdfcheck.py`, `easypdf/pdfimport.py`, `easypdf/docfile.py`, `easypdf/docmodel.py`, `easypdf/htmlclean.py`, `tests/test_pdf*.py`, `tests/test_docfile.py`, `tests/test_import.py`, `docs/PDF-UA.md` |
-| Worker B | `easypdf/ui/*.py` (the frame, editor, toolbar, every dialog except the describer's), `easypdf/editor_page.py` (the HTML, CSS and JS inside the editor), `easypdf/settings.py`, `tests/test_ui*.py`, `tests/test_menus.py`, `tests/test_keys.py`, `docs/KEYBOARD.md` |
+| Coordinator | `main.py`, `launch.pyw`, `easypdf/constants.py`, `easypdf/singleinstance.py`, `easypdf/appupdate.py`, `easypdf/updatedialog.py`, `easypdf/speech.py`, `easypdf/secrets.py`, `easypdf/appicon.py`, `easypdf/paths.py`, `easypdf/handoff.py`, `tools/*`, `tests/test_update.py`, `tests/test_scaffold.py`, `tests/test_handoff.py`, `CLAUDE.md`, `README.md`, `CHANGELOG.md`, `.gitignore` |
+| Worker A | `easypdf/pdfengine.py`, `easypdf/pdfexport.py`, `easypdf/pdfcheck.py`, `easypdf/pdfimport.py`, `easypdf/docfile.py`, `easypdf/docx_in.py`, `easypdf/markdown_in.py`, `easypdf/htmlclean.py`, `tests/test_pdf*.py`, `tests/test_docfile.py`, `tests/test_import.py`, `docs/PDF-UA.md` |
+| Worker B | `easypdf/ui/*.py` (the frame, editor, toolbar, every dialog except the describer's), `easypdf/ui/keymap.py`, `easypdf/editor_page.py` (the HTML, CSS and JS inside the editor), `easypdf/settings.py`, `tests/test_ui*.py`, `tests/test_menus.py`, `tests/test_keys.py`, `docs/KEYBOARD.md` |
 | Worker C | `easypdf/ai.py`, `easypdf/describe.py`, `easypdf/ui/describe_dialog.py`, `easypdf/ui/ai_settings_page.py`, `tests/test_ai.py`, `tests/test_describe.py`, `docs/DESCRIBER.md` |
 
-Interfaces between them, fixed before work starts:
+Interfaces between them, fixed before work starts. **The exact, settled
+signatures are in `docs/DECISIONS.md` under "Changes to the briefs"**
+(`docfile.kind_of` and `docfile.embed_image`, `pdfengine.engines()`,
+`ExportResult.pdfua_claimed`, `Report.pdfua_gate`, `ImportedImage.alt` and
+`alt_source`, `normalise(body_html, for_export=False)`,
+`consent_needed(kind, imported, pictures)`, `DescribeImageDialog(...,
+imported=False)` with `.provider_used`); where this list and that section
+differ, that section wins:
 
 - Worker B calls `pdfexport.export_html(body_html, path, meta, progress)` and
   `pdfimport.import_pdf(path) -> (body_html, meta, images)`, both of which
@@ -107,7 +116,9 @@ Interfaces between them, fixed before work starts:
 - **All three speech channels write the status bar at every level.**
 - **Nothing leaves the machine without consent**, and consent names the
   provider. The screen path in Drop Deck asks every time; here, a whole
-  document asks every time and a single image asks once per session.
+  document asks every time and a single image asks once per session. A
+  picture that arrived inside an imported document, and any batch of
+  pictures, is that document leaving the machine and asks every time.
 - **Nothing on the UI thread that can take more than a blink.** Export,
   import and every network call run on a thread and report back with
   `wx.CallAfter`.
@@ -131,6 +142,11 @@ Interfaces between them, fixed before work starts:
   exports it, and the in-app checker passes every check on the result.
   pikepdf confirms the structure tree from the outside.
 - `python tools/release_app.py rehearse` passes. Nothing is uploaded.
+- The export's PDF/UA identifier was written (`pdfua_claimed` True) on the
+  definition-of-done document.
+- A fixture holding an `img` with an `onerror` handler opens without
+  running it.
+- A second launch with a document path opens it in the running copy.
 - NVDA reads the editor with heading, list and link roles; every dialog
   field has a name; the status bar carries every announcement.
 - A screenshot of the running app looks finished: icon, toolbar with icons,
