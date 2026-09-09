@@ -107,14 +107,15 @@ launch.pyw              what the desktop shortcut runs (pythonw, no console)
 easypdf/constants.py    names, the frozen block, speech levels, page defaults
 easypdf/paths.py        config, recent, autosave folders; frozen or source
 easypdf/singleinstance.py, updatedialog.py, speech.py   byte-identical to Drop Deck
-easypdf/appupdate.py    Drop Deck's update client; only the marked block differs
+easypdf/appupdate.py    Velopack applies updates; the TG Studios signed manifest decides
+easypdf/filetype.py     registers .epdf per user from Velopack's install and update hooks
+easypdf/handoff.py      a second launch hands its document to the running copy
 easypdf/secrets.py      Credential Manager; prefix "Easy PDF AI key: "
 easypdf/ai.py           the three-provider layer (from Drop Deck's vision.py)
 easypdf/appicon.py      the mark, drawn at any size; feeds the .ico
 easypdf/ui/             the window, the editor page, every dialog
-tools/build_release.py  PyInstaller + Inno Setup, outside Dropbox
-tools/release_app.py    sign, rehearse, publish, verify the update feed
-tools/easypdf.iss       the installer; AppId frozen
+tools/build_release.py  PyInstaller, then vpk pack (Velopack), outside Dropbox
+tools/release_app.py    sign the manifest, rehearse, publish the feed, verify it live
 tools/nodashes.py       the dash rule
 tests/                  hand-rolled, one file each: python tests/<file>.py
 ```

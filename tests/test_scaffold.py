@@ -50,31 +50,32 @@ check("Open takes .epdf and .docx", ".epdf" in C.IMPORT_EXTENSIONS and ".docx" i
 check("and not .rtf, which is out of 1.0.0", ".rtf" not in C.IMPORT_EXTENSIONS)
 check("pictures are downscaled to 2000 pixels", C.IMAGE_MAX_EDGE == 2000 and 50 <= C.IMAGE_JPEG_QUALITY <= 95)
 
-iss = open(os.path.join(HERE, "tools", "easypdf.iss"), encoding="utf-8").read()
-check("the installer AppId GUID is the frozen one",
-      "{{B194AFF3-AC8A-464F-9440-FB09CC0CDF62}" in iss)
-check("the installer registers the .epdf type with the frozen ProgId",
-      "ChangesAssociations=yes" in iss
-      and 'Subkey: "Software\\Classes\\.epdf"' in iss
-      and 'ValueData: "TGStudios.EasyPDF.Document"' in iss
-      and 'Subkey: "Software\\Classes\\TGStudios.EasyPDF.Document\\shell\\open\\command"' in iss)
-check("the installer output name agrees with the constants",
-      "OutputBaseFilename=EasyPDF-{#AppVersion}-Setup" in iss)
-check("the installer is per user with no admin prompt",
-      "PrivilegesRequired=lowest" in iss)
-check("the installer closes and restarts the running app",
-      "CloseApplications=yes" in iss and "RestartApplications=yes" in iss)
-check("and reopens the app after a silent self-update",
-      "Check: WantsRestart" in iss and "/restartapp" in iss)
+check("the Velopack package id is frozen", C.PACK_ID == "TGStudios.EasyPDF", C.PACK_ID)
+check("the Velopack feed lives under the site's downloads by the feed slug",
+      C.RELEASES_URL == "https://tgstudios.app/downloads/easy-pdf/", C.RELEASES_URL)
+check("Inno Setup is gone: Velopack builds the installer",
+      not os.path.exists(os.path.join(HERE, "tools", "easypdf.iss")))
+build_tool = open(os.path.join(HERE, "tools", "build_release.py"), encoding="utf-8").read()
+check("the build tool packs with vpk under the frozen package id",
+      '"pack"' in build_tool and "C.PACK_ID" in build_tool and "--mainExe" in build_tool)
+check("and collects the velopack module into the frozen build",
+      '"velopack"' in build_tool)
+main_src = open(os.path.join(HERE, "main.py"), encoding="utf-8").read()
+check("main.py runs Velopack's hooks before wx is imported",
+      main_src.index("_velopack_first()") < main_src.index("import wx"))
+check("and the hooks register and remove the document type",
+      "on_after_install_fast_callback(register)" in main_src
+      and "on_before_uninstall_fast_callback(unregister)" in main_src)
 
 
 print("\nThe update client")
 
 from easypdf import appupdate   # noqa: E402
 
-check("the feed URL is derived from the feed slug",
+check("the signed manifest URL is derived from the feed slug",
       appupdate.MANIFEST_URL == "https://tgstudios.app/updates/easy-pdf-app.json",
       appupdate.MANIFEST_URL)
+check("the Velopack feed URL is the constant", appupdate.RELEASES_URL == C.RELEASES_URL)
 check("the public key is baked in", "REPLACE" not in appupdate.PUBLIC_KEY_B64
       and len(appupdate.PUBLIC_KEY_B64) > 40)
 try:
@@ -83,13 +84,12 @@ try:
     check("a bad signature is refused rather than raising", verdict is False)
 except Exception as exc:
     check("a bad signature is refused rather than raising", False, repr(exc))
-check("the staging prefix is this app's own",
-      appupdate.STAGING_PREFIX == ".easypdf-update-", appupdate.STAGING_PREFIX)
-check("the fallback installer name is this app's own",
-      appupdate.INSTALLER_FALLBACK_NAME == "EasyPDF-Setup.exe")
-check("a source build correctly reports no channel", appupdate.is_frozen() is False)
+check("a source build correctly reports no channel", appupdate.is_frozen() is False
+      and not appupdate.is_installed())
 check("version tuples compare as numbers, not strings",
       appupdate.parse_version("0.10.0") > appupdate.parse_version("0.9.0"))
+import velopack   # noqa: E402
+check("the velopack SDK is importable", hasattr(velopack, "UpdateManager"))
 
 
 print("\nShared modules stay byte-identical to the proven copies")

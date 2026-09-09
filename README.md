@@ -7,8 +7,13 @@ own key. A TG Studios program for Windows.
 
 Documents are `.epdf` files: self-contained HTML inside a file type the
 app owns, so a double click opens Easy PDF. Rename one to `.html` and any
-browser reads it. The installer registers the type; the zip copy does not,
-so from the zip open documents from inside the app.
+browser reads it. An installed copy registers the type; the portable zip
+does not, so from the zip open documents from inside the app.
+
+The installer is Velopack: it installs per user with no administrator
+prompt, and an installed copy updates itself in place, with your say-so,
+downloading only what changed. Nothing is downloaded or applied without
+asking, and every update is checked against the TG Studios signature.
 
 ## Running from source
 

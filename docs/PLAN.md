@@ -62,7 +62,7 @@ coordinator makes it at integration.
 
 | Owner | Files |
 |---|---|
-| Coordinator | `main.py`, `launch.pyw`, `easypdf/constants.py`, `easypdf/singleinstance.py`, `easypdf/appupdate.py`, `easypdf/updatedialog.py`, `easypdf/speech.py`, `easypdf/secrets.py`, `easypdf/appicon.py`, `easypdf/paths.py`, `easypdf/handoff.py`, `tools/*`, `tests/test_update.py`, `tests/test_scaffold.py`, `tests/test_handoff.py`, `CLAUDE.md`, `README.md`, `CHANGELOG.md`, `.gitignore` |
+| Coordinator | `main.py`, `launch.pyw`, `easypdf/constants.py`, `easypdf/singleinstance.py`, `easypdf/appupdate.py`, `easypdf/updatedialog.py`, `easypdf/speech.py`, `easypdf/secrets.py`, `easypdf/appicon.py`, `easypdf/paths.py`, `easypdf/handoff.py`, `easypdf/filetype.py`, `tools/*`, `tests/test_update.py`, `tests/test_scaffold.py`, `tests/test_handoff.py`, `tests/test_filetype.py`, `CLAUDE.md`, `README.md`, `CHANGELOG.md`, `.gitignore` |
 | Worker A | `easypdf/pdfengine.py`, `easypdf/pdfexport.py`, `easypdf/pdfcheck.py`, `easypdf/pdfimport.py`, `easypdf/docfile.py`, `easypdf/docx_in.py`, `easypdf/markdown_in.py`, `easypdf/htmlclean.py`, `tests/test_pdf*.py`, `tests/test_docfile.py`, `tests/test_import.py`, `docs/PDF-UA.md` |
 | Worker B | `easypdf/ui/*.py` (the frame, editor, toolbar, every dialog except the describer's), `easypdf/ui/keymap.py`, `easypdf/editor_page.py` (the HTML, CSS and JS inside the editor), `easypdf/settings.py`, `tests/test_ui*.py`, `tests/test_menus.py`, `tests/test_keys.py`, `docs/KEYBOARD.md` |
 | Worker C | `easypdf/ai.py`, `easypdf/describe.py`, `easypdf/ui/describe_dialog.py`, `easypdf/ui/ai_settings_page.py`, `tests/test_ai.py`, `tests/test_describe.py`, `docs/DESCRIBER.md` |

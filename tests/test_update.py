@@ -1,38 +1,31 @@
-"""Updating the portable copy, which used to install a second copy instead.
+"""The update client: Velopack does the work, the TG Studios key decides.
 
-HarmonicaPlayer, on Mastodon, 4 September 2026, running the zip:
-
-    "was in portable copy, checked for updates, it sounded like it was
-    downloading something but it turns out it gave me the installer version
-    and put a new desktop shortcut that linked to installer instead of
-    updating the portable version i was hoping it would have"
-
-    "i discovered when it updated it got the installer and put on my c drive
-    not updated portable copy"
-
-Both builds are PyInstaller frozen, so `is_frozen()` was true for the zip as
-well and it happily downloaded the installer. The installer installed a second
-copy elsewhere, made a desktop shortcut to THAT, and left the copy he was
-running on the old version. Nothing said so, so from where he was sitting the
-update did nothing at all.
+Every check here is about the gate. Velopack's feed is not signed, so the
+signed manifest has to vouch for exactly the package Velopack offers, and
+anything else has to be refused with a sentence that says why. The
+Velopack manager is replaced by a stand-in, because nothing is installed on
+the machine running this test; the UpdateInfo and VelopackAsset objects are
+the real classes from the SDK.
 
     python tests/test_update.py
-
-Easy PDF's copy of Drop Deck's test, against Easy PDF's copy of the client.
 """
 
-import hashlib
+import base64
 import json
 import os
 import sys
 import tempfile
-import zipfile
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ["APPDATA"] = tempfile.mkdtemp(prefix="easypdf-update-test-")
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, HERE)
 
-from easypdf import appupdate
-from easypdf import constants as C
+from cryptography.hazmat.primitives import serialization   # noqa: E402
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey   # noqa: E402
+import velopack   # noqa: E402
+
+from easypdf import appupdate   # noqa: E402
+from easypdf import constants as C   # noqa: E402
+from easypdf import paths   # noqa: E402
 
 CHECKS = []
 
@@ -43,239 +36,273 @@ def check(label, condition, detail=""):
           + (("  " + str(detail)) if detail != "" else ""))
 
 
-print("\nTelling the two builds apart")
+# A key of this test's own. The real public key stays untouched in the
+# module; it is swapped in and restored around the checks that sign.
+private = Ed25519PrivateKey.generate()
+public_b64 = base64.b64encode(private.public_key().public_bytes(
+    serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode()
+REAL_KEY = appupdate.PUBLIC_KEY_B64
+appupdate.PUBLIC_KEY_B64 = public_b64
 
-# An installed copy has Inno Setup's uninstaller beside it. A zip never does.
-installed = tempfile.mkdtemp()
-portable = tempfile.mkdtemp()
-for folder in (installed, portable):
-    open(os.path.join(folder, "%s.exe" % C.APP_NAME), "w").close()
-open(os.path.join(installed, "unins000.exe"), "w").close()
+PACKAGE_SHA = "ab" * 32
+MANIFEST = {"product": C.APP_NAME, "version": "9.9.9",
+            "url": "https://example.invalid/EasyPDF-9.9.9-Setup.exe",
+            "sha256": "cd" * 32, "size": 100, "notes": "A note for the dialog.",
+            "package": "%s-9.9.9-full.nupkg" % C.PACK_ID,
+            "package_sha256": PACKAGE_SHA, "package_size": 5000,
+            "releases_url": C.RELEASES_URL}
 
 
-def pretend(folder, frozen=True):
-    """Run the checks as if the app lived in this folder."""
-    real_exe, real_frozen = sys.executable, getattr(sys, "frozen", None)
-    sys.executable = os.path.join(folder, "%s.exe" % C.APP_NAME)
-    sys.frozen = frozen
+def envelope(manifest):
+    # A copy, so a test that edits the envelope after signing cannot edit
+    # the shared MANIFEST underneath every later check. The first version
+    # of this test did exactly that and reported the gate broken.
+    manifest = json.loads(json.dumps(manifest))
+    payload = appupdate.canonical(manifest)
+    return {"manifest": manifest,
+            "signature": base64.b64encode(private.sign(payload)).decode()}
+
+
+def asset(version="9.9.9", sha=PACKAGE_SHA, size=5000):
+    return velopack.VelopackAsset(C.PACK_ID, version, "Full",
+                                  "%s-%s-full.nupkg" % (C.PACK_ID, version),
+                                  "", sha.upper(), size, "", "")
+
+
+class FakeManager:
+    def __init__(self, info="offered", portable=False, fail_download=None):
+        self.kind = info
+        self.portable = portable
+        self.fail_download = fail_download
+        self.applied = None
+        self.downloaded = None
+
+    def check_for_updates(self):
+        if self.kind == "none":
+            return None
+        if self.kind == "swapped":
+            return velopack.UpdateInfo(asset(sha="00" * 32), [], False)
+        if self.kind == "wrong-size":
+            return velopack.UpdateInfo(asset(size=4999), [], False)
+        if self.kind == "other-version":
+            return velopack.UpdateInfo(asset(version="9.9.8"), [], False)
+        return velopack.UpdateInfo(asset(), [], False)
+
+    def download_updates(self, info, callback=None):
+        self.downloaded = info
+        for step in (0, 25, 50, 75, 100):
+            if self.fail_download == "midway" and step == 50:
+                raise RuntimeError("the wire dropped")
+            if callback:
+                callback(step)
+
+    def apply_updates_and_restart(self, info):
+        self.applied = info
+
+    def get_is_portable(self):
+        return self.portable
+
+    def get_current_version(self):
+        return "1.0.0"
+
+
+def serve(manifest_envelope=None, manager=None, manifest_error=None):
+    def fetch(url, limit=None, **kw):
+        if manifest_error:
+            raise manifest_error
+        if url == appupdate.MANIFEST_URL:
+            return json.dumps(manifest_envelope or envelope(MANIFEST)).encode()
+        raise RuntimeError("unexpected fetch of %s" % url)
+    appupdate._fetch = fetch
+    appupdate._make_manager = (lambda: manager) if manager is not None else None
+
+
+real_fetch, real_maker = appupdate._fetch, appupdate._make_manager
+try:
+    print("\nVersions compare as numbers")
+    check("0.10.0 is newer than 0.9.0",
+          appupdate.parse_version("0.10.0") > appupdate.parse_version("0.9.0"))
+    check("junk sorts as zero", appupdate.parse_version("x.y") == (0, 0, 0))
+
+    print("\nThe signed manifest")
+    parsed, message = appupdate.read_envelope(json.dumps(envelope(MANIFEST)).encode())
+    check("a manifest signed with the key is read", parsed == MANIFEST, message)
+    edited = envelope(MANIFEST)
+    edited["manifest"]["version"] = "99.0.0"
+    parsed, message = appupdate.read_envelope(json.dumps(edited).encode())
+    check("one edited after signing is refused", parsed is None and "wrong key" in message, message)
+    parsed, message = appupdate.read_envelope(b"not json at all")
+    check("garbage is refused with a sentence", parsed is None and message, message)
+    other = Ed25519PrivateKey.generate()
+    forged = {"manifest": MANIFEST, "signature": base64.b64encode(
+        other.sign(appupdate.canonical(MANIFEST))).decode()}
+    parsed, message = appupdate.read_envelope(json.dumps(forged).encode())
+    check("one signed by another key is refused", parsed is None)
+
+    print("\nThe gate: what the manifest vouches for")
+    ok, why = appupdate.vouches(MANIFEST, "9.9.9", PACKAGE_SHA.upper(), 5000)
+    check("the right version, hash and size pass", ok, why)
+    ok, why = appupdate.vouches(MANIFEST, "9.9.8", PACKAGE_SHA, 5000)
+    check("another version is refused and named", not ok and "9.9.8" in why, why)
+    ok, why = appupdate.vouches(MANIFEST, "9.9.9", "00" * 32, 5000)
+    check("another hash is refused", not ok and "checksum" in why, why)
+    ok, why = appupdate.vouches(MANIFEST, "9.9.9", PACKAGE_SHA, 4999)
+    check("another size is refused", not ok and "bytes" in why, why)
+    ok, why = appupdate.vouches({}, "9.9.9", PACKAGE_SHA, 5000)
+    check("no manifest vouches for nothing", not ok)
+
+    print("\ncheck(): the client asks Velopack and believes only the manifest")
+    serve(manager=FakeManager())
+    available, info, message = appupdate.check("1.0.0")
+    check("an old client is offered the vouched package", available, message)
+    check("with the version, the notes and the Velopack update inside",
+          info["version"] == "9.9.9" and info["notes"] == "A note for the dialog."
+          and info.get("velopack") is not None)
+    available, info, message = appupdate.check("9.9.9")
+    check("a client on the newest version is told so",
+          not available and "newest" in message, message)
+    available, info, message = appupdate.check("10.0.0")
+    check("and so is one ahead of the feed", not available and "newest" in message)
+
+    serve(manager=FakeManager("swapped"))
+    available, info, message = appupdate.check("1.0.0")
+    check("a package with a hash the manifest did not sign is refused",
+          not available and "not vouched" in message, message)
+    check("and nothing is handed to the window", info is None)
+
+    serve(manager=FakeManager("wrong-size"))
+    available, _i, message = appupdate.check("1.0.0")
+    check("a package of another size is refused", not available and "not vouched" in message)
+
+    serve(manager=FakeManager("other-version"))
+    available, _i, message = appupdate.check("1.0.0")
+    check("a package of another version is refused", not available and "not vouched" in message)
+
+    serve(manager=FakeManager("none"))
+    available, _i, message = appupdate.check("1.0.0")
+    check("a manifest ahead of the feed says the download is not there yet",
+          not available and "not there yet" in message, message)
+
+    serve(manifest_envelope=edited, manager=FakeManager())
+    available, _i, message = appupdate.check("1.0.0")
+    check("an edited manifest stops everything before Velopack is asked",
+          not available and "wrong key" in message)
+
+    serve(manifest_error=OSError("no route"), manager=FakeManager())
+    available, _i, message = appupdate.check("1.0.0")
+    check("an unreachable server is a sentence", not available and "Could not reach" in message)
+
+    def raising():
+        raise RuntimeError("This application is not properly installed")
+    serve(manager=None)
+    appupdate._make_manager = raising
+    available, info, message = appupdate.check("1.0.0")
+    check("a copy Velopack did not install is told to fetch it by hand",
+          not available and "cannot update itself" in message, message)
+    check("but still learns the version", info and info["version"] == "9.9.9")
+
+    print("\ndownload(): progress in bytes, Stop honoured, failure a sentence")
+    manager = FakeManager()
+    serve(manager=manager)
+    available, info, _m = appupdate.check("1.0.0")
+    seen = []
+    token, message = appupdate.download(info, progress=lambda d, t: seen.append((d, t)))
+    check("the download returns a token", token == "9.9.9", message)
+    check("progress arrives as bytes of the package",
+          seen and seen[0] == (0, 5000) and seen[-1] == (5000, 5000), seen)
+    check("Velopack was asked to download the vouched update", manager.downloaded is not None)
+
+    def stop(done, total):
+        if done >= 2500:
+            raise appupdate.Stopped()
+    token, message = appupdate.download(info, progress=stop)
+    check("Stop from the progress bar stops it", token is None and "stopped" in message, message)
+
+    serve(manager=FakeManager(fail_download="midway"))
+    available, info, _m = appupdate.check("1.0.0")
+    token, message = appupdate.download(info)
+    check("a failed download is a sentence", token is None and "Download failed" in message, message)
+    token, message = appupdate.download({})
+    check("downloading before checking is refused", token is None and "Check for updates" in message)
+
+    print("\nrun_installer(): flush, clear the marker, hand over to Velopack")
+    manager = FakeManager()
+    serve(manager=manager)
+    _a, info, _m = appupdate.check("1.0.0")
+    token, _m = appupdate.download(info)
+    scratch = tempfile.mkdtemp()
+    real_local = paths.local_dir
+    paths.local_dir = lambda: scratch
+    flushed = []
     try:
-        return appupdate.is_portable()
+        paths.mark_started()
+        ok, message = appupdate.run_installer(token, before_restart=lambda: flushed.append(1))
+        check("apply reports what will happen", ok and "close and reopen" in message, message)
+        check("the window's flush ran first", flushed == [1])
+        check("the clean exit marker was cleared, so the next start does not "
+              "offer a recovery", not paths.last_run_crashed())
+        check("Velopack was handed the downloaded update", manager.applied is not None)
     finally:
-        sys.executable = real_exe
-        if real_frozen is None:
-            del sys.frozen
-        else:
-            sys.frozen = real_frozen
+        paths.local_dir = real_local
+    ok, message = appupdate.run_installer("0.0.0")
+    check("applying what was never downloaded is refused", not ok)
 
+    print("\nauto_check(): quiet unless installed, and throttled")
+    appupdate._make_manager = raising
+    config = tempfile.mkdtemp()
+    check("a source run never checks on its own",
+          appupdate.auto_check(config) == (False, None, None))
+    serve(manager=FakeManager())
+    available, info, message = appupdate.auto_check(config)
+    check("an installed copy checks and is offered the update", available and info["version"] == "9.9.9")
+    available, info, message = appupdate.auto_check(config)
+    check("and not again within a day", (available, message) == (False, None))
+    available, info, message = appupdate.auto_check(config, force=True)
+    check("unless asked", available)
 
-check("an installed copy is not portable", pretend(installed) is False)
-check("a copy unpacked from the zip is", pretend(portable) is True)
-check("and running from source is neither",
-      pretend(portable, frozen=False) is False)
+    print("\ninspect_feed(): a release verified from any machine")
+    index = {"Assets": [
+        {"PackageId": C.PACK_ID, "Version": "9.9.8", "Type": "Full",
+         "FileName": "%s-9.9.8-full.nupkg" % C.PACK_ID, "SHA256": "11" * 32, "Size": 4000},
+        {"PackageId": C.PACK_ID, "Version": "9.9.9", "Type": "Delta",
+         "FileName": "%s-9.9.9-delta.nupkg" % C.PACK_ID, "SHA256": "22" * 32, "Size": 100},
+        {"PackageId": C.PACK_ID, "Version": "9.9.9", "Type": "Full",
+         "FileName": "%s-9.9.9-full.nupkg" % C.PACK_ID, "SHA256": PACKAGE_SHA.upper(), "Size": 5000},
+    ]}
+    sizes = {"%s-9.9.9-full.nupkg" % C.PACK_ID: 5000, "EasyPDF-9.9.9-Setup.exe": 100}
 
-print("\nWhat a portable copy is offered")
+    def fetch(url, limit=None, **kw):
+        if url == appupdate.MANIFEST_URL:
+            return json.dumps(envelope(MANIFEST)).encode()
+        if url == appupdate.RELEASES_URL + appupdate.RELEASES_FILE:
+            return json.dumps(index).encode()
+        raise RuntimeError(url)
+    real_head = appupdate._head
+    appupdate._head = lambda url: sizes.get(url.rsplit("/", 1)[-1], -1)
+    try:
+        ok, lines = appupdate.inspect_feed(fetch=fetch)
+        check("a feed whose newest full package is the vouched one passes", ok, lines)
+        sizes["%s-9.9.9-full.nupkg" % C.PACK_ID] = 4999
+        ok, lines = appupdate.inspect_feed(fetch=fetch)
+        check("a package missing or truncated on the server fails", not ok, lines[-1])
+        sizes["%s-9.9.9-full.nupkg" % C.PACK_ID] = 5000
+        index["Assets"][2]["SHA256"] = "33" * 32
+        ok, lines = appupdate.inspect_feed(fetch=fetch)
+        check("a feed the manifest does not vouch for fails", not ok and "REFUSED" in lines[-1], lines[-1])
+    finally:
+        appupdate._head = real_head
 
-body = b"pretend this is a zip" * 500
-digest = hashlib.sha256(body).hexdigest()
-modern = {"version": "9.9.9", "url": "https://example.invalid/Setup.exe",
-          "sha256": "0" * 64, "zip_url": "https://example.invalid/app.zip",
-          "zip_sha256": digest, "zip_size": len(body)}
-older = {"version": "9.9.9", "url": "https://example.invalid/Setup.exe",
-         "sha256": "0" * 64}
-
-check("a modern manifest names a portable download",
-      appupdate.zip_for(modern) is not None)
-check("and one published before this did not",
-      appupdate.zip_for(older) is None)
-
-path, message = appupdate.download(older, portable=True)
-check("meeting an older manifest, a portable copy is NOT handed an installer",
-      path is None, path)
-check("and it is told what to do instead, and that nothing was touched",
-      "portable download" in message and "Nothing has been changed" in message,
-      message[:70])
-
-# The signed hash is checked exactly as strictly for the zip.
-real_fetch = appupdate._fetch
-# **kwargs, because download() passes a size limit and a one argument
-# stand in raises inside download's own try. That turned into
-# "Download failed" and BOTH checks below were reported as failures
-# of the code rather than of this line. The download path itself was
-# fine the whole time and untested the whole time.
-appupdate._fetch = lambda url, **kw: body
-try:
-    path, message = appupdate.download(modern, portable=True)
-    check("a portable download that matches its signed hash is kept",
-          path is not None and os.path.exists(path), message)
-    kept = path
-    appupdate._fetch = lambda url, **kw: body + b"tampered"
-    path, message = appupdate.download(modern, portable=True)
-    check("and one that does not is thrown away", path is None)
-    check("with a reason that says nothing was installed",
-          "thrown away" in message and "Nothing was installed" in message,
-          message[:60])
+    print("\nFrom source")
+    appupdate._make_manager = raising
+    check("not installed", not appupdate.is_installed())
+    check("not portable", not appupdate.is_portable())
+    check("the channel state says so", "source" in appupdate.channel_state(), appupdate.channel_state())
+    check("the feed URL is the constant", appupdate.RELEASES_URL == C.RELEASES_URL)
+    check("the manifest URL is unchanged for the release checker",
+          appupdate.MANIFEST_URL == "https://tgstudios.app/updates/easy-pdf-app.json")
 finally:
-    appupdate._fetch = real_fetch
-
-print("\nUnpacking beside, never over the top")
-
-# A real zip, shaped the way the release build makes one.
-staging = tempfile.mkdtemp()
-zip_file = os.path.join(staging, "app.zip")
-with zipfile.ZipFile(zip_file, "w") as archive:
-    archive.writestr("%s.exe" % C.APP_NAME, "new version")
-    archive.writestr("demo/one.wav", "audio")
-
-live = os.path.join(tempfile.mkdtemp(), C.APP_NAME)
-os.makedirs(live)
-open(os.path.join(live, "%s.exe" % C.APP_NAME), "w").write("old version")
-open(os.path.join(live, "board-of-mine.json"), "w").write("{}")
-
-real_exe = sys.executable
-sys.executable = os.path.join(live, "%s.exe" % C.APP_NAME)
-try:
-    landed = appupdate.unpack_beside(zip_file, "9.9.9")
-finally:
-    sys.executable = real_exe
-
-check("the new copy lands in a folder of its own", os.path.isdir(landed),
-      landed)
-check("named for the version, so which is which is obvious",
-      "9.9.9" in landed, os.path.basename(landed))
-check("beside the old one, not inside it",
-      os.path.dirname(os.path.abspath(landed))
-      == os.path.dirname(os.path.abspath(live)))
-check("with the program in it",
-      os.path.exists(os.path.join(landed, "%s.exe" % C.APP_NAME)))
-check("and everything else from the zip",
-      os.path.exists(os.path.join(landed, "demo", "one.wav")))
-check("the copy that is running is untouched",
-      open(os.path.join(live, "%s.exe" % C.APP_NAME)).read() == "old version")
-check("including anything the user left in it",
-      os.path.exists(os.path.join(live, "board-of-mine.json")))
-
-# Twice, because somebody will.
-sys.executable = os.path.join(live, "%s.exe" % C.APP_NAME)
-try:
-    again = appupdate.unpack_beside(zip_file, "9.9.9")
-finally:
-    sys.executable = real_exe
-check("unpacking the same version twice does not overwrite the first",
-      again != landed and os.path.isdir(again), os.path.basename(again))
-
-print()
-print("Replacing the copy in place, which is what portable means")
-
-# Tony, 5 September 2026: "portable comes with the intended purpose of
-# replacing with the new executable that's downloaded."
-#
-# Windows will not let a running executable be overwritten, so the NEW copy
-# does the writing: it waits for the old process to end, replaces the folder
-# it came from and starts the app again from the same path. What follows is
-# that swap, run the way the new copy runs it.
-import shutil
-
-root = tempfile.mkdtemp()
-live = os.path.join(root, C.APP_NAME)
-os.makedirs(os.path.join(live, "_internal"))
-open(os.path.join(live, "%s.exe" % C.APP_NAME), "w").write("OLD EXE")
-open(os.path.join(live, "_internal", "payload.dat"), "w").write("old payload")
-open(os.path.join(live, "_internal", "dropped.dat"), "w").write("stale")
-open(os.path.join(live, "my-notes.txt"), "w").write("mine")
-os.makedirs(os.path.join(live, "my sounds"))
-open(os.path.join(live, "my sounds", "sting.wav"), "w").write("audio")
-
-new_zip = os.path.join(root, "new.zip")
-with zipfile.ZipFile(new_zip, "w") as archive:
-    archive.writestr("%s.exe" % C.APP_NAME, "NEW EXE")
-    archive.writestr("_internal/payload.dat", "new payload")
-    archive.writestr("_internal/added.dat", "brand new")
-
-real_exe = sys.executable
-sys.executable = os.path.join(live, "%s.exe" % C.APP_NAME)
-sys.frozen = True
-try:
-    check("a folder we can write to can be replaced where it stands",
-          appupdate.can_replace() is True)
-    staging = appupdate.unpack_staging(new_zip, "9.9.9")
-    check("the download waits in a folder of its own",
-          os.path.isdir(staging) and appupdate.STAGING_PREFIX in staging,
-          os.path.basename(staging))
-    ok, message = appupdate.finish_update(live, pid=0, source=staging)
-    check("the swap says it worked", ok, message)
-finally:
-    sys.executable = real_exe
-    del sys.frozen
-
-check("the folder keeps its name, so every shortcut still works",
-      os.path.basename(live) == C.APP_NAME)
-check("the executable is the new one",
-      open(os.path.join(live, "%s.exe" % C.APP_NAME)).read() == "NEW EXE")
-check("and so is what it runs on",
-      open(os.path.join(live, "_internal", "payload.dat")).read()
-      == "new payload")
-check("a file the new build no longer ships is gone",
-      not os.path.exists(os.path.join(live, "_internal", "dropped.dat")))
-check("a file it added is there",
-      os.path.exists(os.path.join(live, "_internal", "added.dat")))
-check("anything the user put in the folder is untouched",
-      open(os.path.join(live, "my-notes.txt")).read() == "mine"
-      and os.path.exists(os.path.join(live, "my sounds", "sting.wav")))
-check("and nothing half done is left behind",
-      not os.path.exists(os.path.join(live, "_internal.replaced")))
-
-# The staging folder cannot delete itself: the copy doing the work is running
-# from inside it. The next start clears it.
-check("the staging folder is still there afterwards", os.path.isdir(staging))
-sys.executable = os.path.join(live, "%s.exe" % C.APP_NAME)
-try:
-    gone = appupdate.clean_staging()
-finally:
-    sys.executable = real_exe
-check("and the next start clears it", not os.path.isdir(staging), gone)
-
-print()
-print("When it cannot be done, nothing is broken")
-
-# A swap that fails halfway has to leave a working copy behind, so the old
-# payload is renamed rather than deleted, and put back if anything raises.
-broken = os.path.join(tempfile.mkdtemp(), C.APP_NAME)
-os.makedirs(os.path.join(broken, "_internal"))
-open(os.path.join(broken, "%s.exe" % C.APP_NAME), "w").write("OLD EXE")
-open(os.path.join(broken, "_internal", "payload.dat"), "w").write("old payload")
-
-half = tempfile.mkdtemp()
-open(os.path.join(half, "%s.exe" % C.APP_NAME), "w").write("NEW EXE")
-os.makedirs(os.path.join(half, "_internal"))
-open(os.path.join(half, "_internal", "payload.dat"), "w").write("new payload")
-
-# The payload folder is what fails: it is the big copy and the one a full
-# disk would stop in the middle of. copytree binds copy2 at definition time,
-# so patching that would not have been felt here at all.
-real_tree = shutil.copytree
-
-
-def fails_partway(*args, **kw):
-    raise OSError("the disk filled up")
-
-
-shutil.copytree = fails_partway
-try:
-    ok, message = appupdate.finish_update(broken, pid=0, source=half)
-finally:
-    shutil.copytree = real_tree
-check("a swap that fails says so", not ok, message)
-check("and says the old copy was put back", "put back" in message, message)
-check("the old payload really is back",
-      open(os.path.join(broken, "_internal", "payload.dat")).read()
-      == "old payload")
-check("with nothing left renamed aside",
-      not os.path.exists(os.path.join(broken, "_internal.replaced")))
-
-# And a copy that is still running is never replaced underneath itself.
-ok, message = appupdate.finish_update(broken, pid=os.getpid())
-check("a copy that is still running is left alone", not ok)
-check("and told why", "still running" in message, message)
+    appupdate._fetch, appupdate._make_manager = real_fetch, real_maker
+    appupdate.PUBLIC_KEY_B64 = REAL_KEY
 
 print("\n%d/%d checks passed" % (sum(CHECKS), len(CHECKS)))
 sys.exit(0 if all(CHECKS) else 1)

@@ -61,6 +61,56 @@ def _set_taskbar_identity():
         pass
 
 
+def _velopack_first():
+    """Velopack's startup logic, before anything else in the process.
+
+    Velopack runs this executable with --veloapp-install, --veloapp-updated,
+    --veloapp-obsolete and --veloapp-uninstall during an install, an update
+    and an uninstall, and expects the hooks to run and the process to exit
+    within a few seconds. run() does the exit itself (measured 2026-09-09:
+    the hook was called and nothing after run() ran). So this is the first
+    thing main.py does, before DPI awareness and before wx is imported.
+
+    The hooks are how the .epdf document type gets registered: Velopack
+    installs the program and knows nothing about file types. After a normal
+    start run() returns, having set the first-run and restarted flags the
+    window reads. From source, or from a plain unpacked folder, Velopack
+    prints one line to stderr about not being installed and returns; that
+    is harmless.
+    """
+    try:
+        import velopack
+    except Exception:
+        return
+    from easypdf import appupdate, filetype
+
+    def register(*_args):
+        filetype.register()
+
+    def unregister(*_args):
+        filetype.unregister()
+
+    def first_run(*args):
+        appupdate.note_first_run(args[0] if args else None)
+
+    def restarted(*args):
+        appupdate.note_restarted(args[0] if args else None)
+
+    try:
+        (velopack.App()
+            .on_after_install_fast_callback(register)
+            .on_after_update_fast_callback(register)
+            .on_before_uninstall_fast_callback(unregister)
+            .on_first_run(first_run)
+            .on_restarted(restarted)
+            .run())
+    except Exception:
+        # Never let the updater be why the program will not start.
+        pass
+
+
+_velopack_first()
+
 if sys.platform == "win32":
     _make_dpi_aware()
     _set_taskbar_identity()
@@ -119,6 +169,10 @@ def selftest():  # noqa: C901
     notes.append("version: %s" % C.APP_VERSION)
 
     # ---- the update channel ------------------------------------------------
+    # Velopack applies updates; the TG Studios key decides which. Both halves
+    # fail silently in a frozen build if they are missing: no velopack
+    # module means no update ever, and no cryptography means every manifest
+    # is refused as unsigned. Prove both.
     try:
         from easypdf import appupdate
         if "REPLACE" in appupdate.PUBLIC_KEY_B64:
@@ -126,12 +180,21 @@ def selftest():  # noqa: C901
         else:
             import base64
             appupdate._verify(b"probe", base64.b64encode(bytes(64)).decode())
-            notes.append("app updates: verification working, key %s..."
+            notes.append("app updates: signature verification working, key %s..."
                          % appupdate.PUBLIC_KEY_B64[:12])
-        notes.append("app update channel: %s"
-                     % ("live" if appupdate.is_frozen() else
-                        "source build, correctly disabled"))
-        notes.append("update feed: %s" % appupdate.MANIFEST_URL)
+        try:
+            import velopack
+            probe_asset = velopack.VelopackAsset(C.PACK_ID, "0.0.1", "Full",
+                                                 "probe.nupkg", "", "00" * 32,
+                                                 1, "", "")
+            velopack.UpdateInfo(probe_asset, [], False)
+            notes.append("velopack: importable, package id %s" % C.PACK_ID)
+        except Exception as exc:
+            problems.append("velopack is missing or broken in this build, so "
+                            "no update could ever be applied: %r" % exc)
+        notes.append("app update channel: %s" % appupdate.channel_state())
+        notes.append("signed manifest: %s" % appupdate.MANIFEST_URL)
+        notes.append("velopack feed: %s" % appupdate.RELEASES_URL)
     except RuntimeError as exc:
         problems.append("app update verification broken: %s" % exc)
     except Exception as exc:
@@ -506,37 +569,7 @@ class EasyPdfApp(wx.App):
         return True
 
 
-def finish_update():
-    """Replace the copy that asked us to, then start it and get out of the way.
-
-    This runs in the NEWLY unpacked copy, started by the old one with
-    --finish-update, and it is the only way a portable copy can replace
-    itself: Windows will not let a running executable be overwritten, so the
-    new one does the writing while the old one is closing.
-
-    No window, no wx, and no single instance mutex: the app that starts
-    afterwards needs both of those and this must not be holding either.
-    """
-    from easypdf import appupdate
-
-    at = sys.argv.index(appupdate.FINISH_FLAG)
-    target, pid = sys.argv[at + 1], sys.argv[at + 2]
-    ok, message = appupdate.finish_update(target, pid)
-    if not ok:
-        try:
-            note = os.path.join(target, "update-did-not-finish.txt")
-            with open(note, "w", encoding="utf-8") as handle:
-                handle.write(message + "\n")
-        except OSError:
-            pass
-    appupdate.relaunch(target)
-    return 0 if ok else 1
-
-
 def main():
-    from easypdf import appupdate
-    if appupdate.FINISH_FLAG in sys.argv:
-        os._exit(finish_update())
     if "--selftest" in sys.argv:
         try:
             code = selftest()

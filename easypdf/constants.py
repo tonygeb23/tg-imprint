@@ -40,6 +40,17 @@ FEED_SLUG = "easy-pdf"
 APP_USER_MODEL_ID = "TGStudios.EasyPDF.1"
 DOC_PROGID = "TGStudios.EasyPDF.Document"
 CONFIG_FOLDER_NAME = "Easy PDF"
+#: The Velopack package id. It names the install folder
+#: (%LocalAppData%\TGStudios.EasyPDF), the Add or Remove Programs entry
+#: and every update package, so a changed id is a different program that
+#: installs beside the old one. Tony chose Velopack for every program from
+#: this one onward (2026-09-09); the older TG Studios apps keep their own
+#: updater.
+PACK_ID = "TGStudios.EasyPDF"
+#: Where the Velopack feed lives: the folder holding releases.win.json and
+#: the update packages. The signed TG Studios manifest that vouches for what
+#: is in it lives beside the other apps' manifests, see appupdate.py.
+RELEASES_URL = "https://tgstudios.app/downloads/%s/" % FEED_SLUG
 #: EasyPDF-1.0.0-Setup.exe and Easy-PDF-1.0.0-windows.zip. Hyphens rather
 #: than spaces because these names become URLs, scp arguments and TG Stats
 #: download rules, and a space escapes differently in each.

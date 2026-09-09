@@ -1,41 +1,39 @@
-"""Update the app itself.
+"""Update the app itself: Velopack does the work, the TG Studios key decides.
 
-Easy PDF's copy of TG Drop Deck's appupdate.py. Only the marked block near
-the top differs. The docstring below is the shared one.
+Tony, 2026-09-09: Velopack (velopack.io) is the updater for every TG Studios
+program from this one onward. The older apps keep their own. What Velopack
+gives us over the hand-rolled updater in those apps is measured in
+Dropbox\\TG Studios\\TG Drop Deck's notes and in the Velopack evaluation:
+delta updates instead of a whole installer per point release, and no
+installer window appearing while the app vanishes underneath it. The update
+is applied in place and the app is restarted, which is the shape a screen
+reader user can follow.
 
-Byte-identical in shape to the Prompt Vault's appupdate.py on purpose: one
-update mechanism across every TG Studios app, one set of traps already found,
-one thing to fix if it ever breaks. Only the feed URL and the version constant
-differ.
+What Velopack does not give us is a signature. Its releases.win.json is not
+signed: integrity is TLS plus a SHA256 written inside that same file, so
+whoever rewrites the file rewrites the hash. That is exactly the trap the
+TG Studios updater was designed around, and the server it protects against
+has been attacked before. So the signed manifest stays, and it is the gate:
 
-Drop Deck 2.0.0 and earlier shipped as a zip with no way to receive a new
-version, so every fix after it had to be a manual download. A release with no
-update channel is frozen forever - including its bugs. This is that channel.
+  1. tgstudios.app/updates/<feed>-app.json is ed25519 signed with the
+     TG Studios update key. It names the version, the SHA256 and the size
+     of the Velopack package for that version, and the release notes.
+  2. Velopack is asked what it can see. Its answer is accepted only when the
+     version, the SHA256 and the size match what the signed manifest vouches
+     for. Anything else is refused and nothing is changed.
+  3. Velopack downloads, verifies the package against that same SHA256,
+     applies it and restarts the app. Nothing is downloaded or applied
+     without the user saying yes, in a dialog, every time.
 
-The trust model is the same shape as sync.py and deliberately stricter, because
-this one ends in running an executable:
-
-  1. The manifest is ed25519 signed with the TG Studios *update* key - a
-     different key from the prompt feed. A key that can only publish prompts is
-     a much smaller thing to lose than one that can run code, and keeping them
-     apart means losing the small one stays small.
-  2. The installer is SHA-256'd against the signed manifest before it is run.
-  3. Nothing is downloaded or run without the user saying yes.
-
-Point 3 is not negotiable. A free tray app that silently replaces its own
-executable is indistinguishable from malware, and for a screen reader user an
-installer window appearing unannounced, while the app it is replacing vanishes
-underneath it, is worse than no update at all.
+The public API keeps the names the TG Studios frames already use (check,
+auto_check, download, run_installer, is_frozen, is_portable, Stopped) so
+the update flow in the window reads the same as in the other apps. Only the
+inside changed.
 """
 import base64
-import hashlib
 import json
 import os
-import shutil
 import ssl
-import subprocess
-import sys
-import tempfile
 import time
 import urllib.request
 
@@ -43,43 +41,27 @@ from . import constants as C
 
 # Public half of the TG Studios installer-update key. Baked in; it must never
 # change once shipped or every installed copy silently stops seeing updates.
+# The same key as every other TG Studios app.
 PUBLIC_KEY_B64 = "kJOlcZKYCyYBk/1JrmyfxFSX5Vf6JiM7oXf+0PEDZ04="
 
 # ---------------------------------------------------------------------------
-# The app-specific block. Everything below this block is TG Drop Deck's
-# proven copy, unchanged, so a fix there is a fix here (re-copy it).
+# The app-specific block.
 # ---------------------------------------------------------------------------
+#: The signed manifest. check_updates.py in TG Studios Release reads this
+#: name and the key above out of the source, so keep both as constants.
 MANIFEST_URL = "https://tgstudios.app/updates/%s-app.json" % C.FEED_SLUG
-#: What a downloaded installer is called when the URL gives no name.
-INSTALLER_FALLBACK_NAME = "%s-Setup.exe" % C.INSTALLER_BASENAME
-#: Temp folder prefixes. Unique per app so two TG Studios apps updating at
-#: once cannot collide.
-TEMP_PREFIX = "easypdf-update-"
-WRITE_PROBE = ".easypdf-write-test"
+#: The Velopack feed: the folder holding releases.win.json and the packages.
+RELEASES_URL = C.RELEASES_URL
+#: The manifest key that names the Velopack package. The manifest also
+#: carries url, sha256 and size for the Setup.exe on the site, so the
+#: release checker that reads every app's manifest keeps working unchanged.
+PACKAGE_KEYS = ("package", "package_sha256", "package_size")
 # ---------------------------------------------------------------------------
+
 TIMEOUT = 30
-#: Read in blocks this big. Small enough that the bar moves often on a slow
-#: line, big enough not to make a system call per kilobyte.
-CHUNK = 256 * 1024
-
-#: An absolute ceiling for a download whose size the manifest does not
-#: declare. It is a backstop, NOT the real limit: the real limit is the size
-#: the signed manifest names, worked out per download below.
-#:
-#: It used to be 120 MB with a comment saying "an installer is ~20 MB". Then
-#: the app grew FFmpeg and OpenCV, the portable zip reached 135 MB, and every
-#: portable copy would have refused its own update with "the download was
-#: larger than expected". The release tool caught it, which is the only reason
-#: this is not a silent outage. A number that has to be revised every time the
-#: app grows is a number that will be forgotten, so it is derived now.
-MAX_BYTES = 512 * 1024 * 1024
-#: How much more than the declared size is tolerated before a download is
-#: called wrong. Small: the hash check below is the real proof, and this only
-#: stops a runaway read.
-DOWNLOAD_SLACK = 1024 * 1024
-
 STAMP_FILE = "last_app_check.json"
 DEFAULT_INTERVAL_HOURS = 24
+RELEASES_FILE = "releases.win.json"
 
 
 class Stopped(Exception):
@@ -89,9 +71,8 @@ class Stopped(Exception):
 def parse_version(text):
     """"0.2.0" -> (0, 2, 0). Unreadable parts sort as 0 rather than raising.
 
-    Comparing version *tuples* and not strings, because "0.10.0" is older than
-    "0.9.0" as a string and newer as a version, and getting that backwards
-    means an update that never offers itself again.
+    Comparing version tuples and not strings, because "0.10.0" is older than
+    "0.9.0" as a string and newer as a version.
     """
     out = []
     for part in str(text or "0").split("."):
@@ -102,50 +83,31 @@ def parse_version(text):
     return tuple(out[:3])
 
 
-def _fetch(url, limit=MAX_BYTES, progress=None):
-    """The bytes at a URL, in blocks, so somebody can be told how it is going.
+# ------------------------------------------------------------ the manifest
 
-    **It used to read the whole thing in one call.** `download` has accepted a
-    `progress` callback since it was written and had nothing to feed it, so
-    the update was a busy cursor and a silence lasting however long 86 MB
-    takes. Tony, 8 September 2026, asked for a progress bar, and the reason
-    there was not one is this function.
-
-    `progress` is called as `(done, total)` with `total` 0 when the server
-    will not say. It is called from a worker thread, so anything touching wx
-    has to hop for itself.
-    """
+def _fetch(url, limit=4 * 1024 * 1024):
+    """A small file over HTTPS. Only the manifest and the feed index come
+    through here; the packages are Velopack's to fetch."""
     req = urllib.request.Request(url, headers={
-        "User-Agent": "%s/%s" % (C.APP_NAME.replace(" ", ""),
-                                 C.APP_VERSION)})
+        "User-Agent": "%s/%s" % (C.APP_NAME.replace(" ", ""), C.APP_VERSION)})
     ctx = ssl.create_default_context()
-    out = bytearray()
     with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as resp:
-        try:
-            total = int(resp.headers.get("Content-Length") or 0)
-        except (TypeError, ValueError):
-            total = 0
-        if total and total > limit:
-            raise ValueError("the download was larger than expected")
-        while True:
-            block = resp.read(CHUNK)
-            if not block:
-                break
-            out += block
-            if len(out) > limit:
-                raise ValueError("the download was larger than expected")
-            if progress is not None:
-                try:
-                    progress(len(out), total)
-                except Stopped:
-                    # The one exception from a progress callback that means
-                    # something. Everything else is ignored just below.
-                    raise
-                except Exception:
-                    # A failing progress bar must never lose an update that
-                    # is otherwise arriving perfectly well.
-                    pass
-    return bytes(out)
+        data = resp.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("the file was larger than expected")
+    return data
+
+
+def _head(url):
+    """Content-Length of a URL, or -1. Used when a release is verified."""
+    req = urllib.request.Request(url, method="HEAD", headers={
+        "User-Agent": "%s/%s" % (C.APP_NAME.replace(" ", ""), C.APP_VERSION)})
+    ctx = ssl.create_default_context()
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as resp:
+            return int(resp.headers.get("Content-Length") or -1)
+    except Exception:
+        return -1
 
 
 def _verify(manifest_bytes, signature_b64):
@@ -168,202 +130,263 @@ def _verify(manifest_bytes, signature_b64):
         return False
 
 
-def check(current_version=None):
-    """Is there a newer build? Returns (available, info, message)."""
-    current = current_version or C.APP_VERSION
+def canonical(obj):
+    """The exact bytes that get signed. Client and release tool must agree."""
+    return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def read_envelope(raw):
+    """Parse and verify a signed manifest. Returns (manifest_or_None, message)."""
+    try:
+        envelope = json.loads(raw.decode("utf-8"))
+        payload = canonical(envelope["manifest"])
+        signature = envelope["signature"]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None, "The update server sent something unreadable."
+    try:
+        if not _verify(payload, signature):
+            return None, ("The update was signed by the wrong key and was "
+                          "rejected. Nothing was changed.")
+    except RuntimeError as exc:
+        return None, str(exc)
+    return envelope["manifest"], ""
+
+
+def fetch_manifest():
+    """The signed manifest from the server. Returns (manifest_or_None, message)."""
     try:
         raw = _fetch(MANIFEST_URL, limit=1024 * 1024)
     except Exception as exc:
-        return False, None, "Could not reach the update server. %s" % exc
-
-    try:
-        envelope = json.loads(raw.decode("utf-8"))
-        payload = json.dumps(envelope["manifest"], sort_keys=True,
-                             separators=(",", ":")).encode("utf-8")
-        signature = envelope["signature"]
-    except (ValueError, KeyError):
-        return False, None, "The update server sent something unreadable."
-
-    try:
-        if not _verify(payload, signature):
-            return False, None, ("The update was signed by the wrong key and "
-                                 "was rejected. Nothing was changed.")
-    except RuntimeError as exc:
-        return False, None, str(exc)
-
-    info = envelope["manifest"]
-    if parse_version(info.get("version")) <= parse_version(current):
-        return False, info, "You have the newest version."
-    return True, info, ("Version %s is available. You have %s."
-                        % (info.get("version"), current))
+        return None, "Could not reach the update server. %s" % exc
+    return read_envelope(raw)
 
 
-def download(info, progress=None, portable=False):
-    """Fetch the download and check it against the signed hash.
+def vouches(manifest, version, sha256, size=None):
+    """The gate. Does the signed manifest vouch for this package?
 
-    Returns (path_or_None, message). The file is only left on disk if the hash
-    matched, so there is never a half-verified installer sitting in temp for
-    somebody to run by hand.
-
-    ``portable`` fetches the zip rather than the installer, and its hash comes
-    from the same signed manifest, so a portable update is verified exactly as
-    strictly as an installed one.
+    Returns (ok, reason). Every mismatch is named, because a refusal that
+    says only "no" cannot be told from a broken updater.
     """
-    which = zip_for(info) if portable else None
-    if portable and which is None:
-        return None, ("This version does not publish a portable download yet. "
-                      "Get the zip from tgstudios.app and unpack it over this "
-                      "folder. Nothing has been changed here.")
-    url = which["url"] if which else info["url"]
-    wanted = (which["sha256"] if which else info.get("sha256", "")) or ""
-    # The limit comes from the SIGNED manifest, so it can never be wrong for
-    # the file it is about to fetch, and a tampered size is a tampered
-    # manifest, which is refused before this point.
-    declared = 0
+    if not manifest:
+        return False, "there is no signed manifest"
+    if str(manifest.get("version", "")).strip() != str(version or "").strip():
+        return False, ("the signed manifest names version %s, not %s"
+                       % (manifest.get("version"), version))
+    wanted = str(manifest.get("package_sha256", "")).strip().lower()
+    got = str(sha256 or "").strip().lower()
+    if not wanted or wanted != got:
+        return False, "the package checksum is not the one the manifest signed"
     try:
-        declared = int((which or info).get("size") or 0)
+        expected = int(manifest.get("package_size") or 0)
     except (TypeError, ValueError):
-        declared = 0
-    limit = (declared + DOWNLOAD_SLACK) if declared > 0 else MAX_BYTES
-    try:
-        blob = _fetch(url, limit=limit, progress=progress)
-    except Stopped:
-        return None, "The download was stopped. Nothing was changed."
-    except Exception as exc:
-        return None, "Download failed. %s" % exc
-
-    got = hashlib.sha256(blob).hexdigest()
-    if got.lower() != str(wanted).lower():
-        return None, ("The download did not match its signed checksum, so it "
-                      "was thrown away. Nothing was installed.")
-
-    name = os.path.basename(url) or INSTALLER_FALLBACK_NAME
-    path = os.path.join(tempfile.mkdtemp(prefix=TEMP_PREFIX), name)
-    with open(path, "wb") as fh:
-        fh.write(blob)
-    return path, "Downloaded %s." % info.get("version", "the update")
+        expected = 0
+    if size is not None and expected and int(size) != expected:
+        return False, ("the package is %d bytes and the manifest signed %d"
+                       % (int(size), expected))
+    return True, ""
 
 
-def run_installer(path):
-    """Hand off to the installer and let it close and restart the app.
-
-    /SILENT rather than /VERYSILENT: it skips the wizard pages nobody needs but
-    still shows a progress window, so the app disappearing and coming back is
-    something the user can see and a screen reader can announce. Silence here
-    would look like a crash.
-
-    The .iss sets CloseApplications and RestartApplications, which is what
-    makes replacing a running exe work at all.
-    """
-    try:
-        # /restartapp=1 is read by the .iss, which has a [Run] entry guarded
-        # on it. **The plain [Run] entry carries `skipifsilent`**, so with
-        # /SILENT the "Open TG Drop Deck" step was skipped by definition and
-        # the app never came back, exactly as Tony reported on 8 September
-        # 2026. RestartApplications=yes did not cover it either: the Restart
-        # Manager only restarts what it closed itself, and a PyInstaller
-        # build does not register with it.
-        subprocess.Popen([path, "/SILENT", "/NOCANCEL", "/restartapp=1"],
-                         close_fds=True)
-        return True, "Installing. The app will close and reopen by itself."
-    except Exception as exc:
-        return False, "Could not start the installer. %s" % exc
-
-
-def unpack_beside(zip_path, version):
-    """Unpack a portable update next to the copy that is running.
-
-    Deliberately NOT over the top of it. The running executable cannot be
-    replaced while it is running, and a half replaced folder is worse than no
-    update: the app would still start and would be a mixture of two versions.
-    So the new copy goes in its own folder next to this one, and the user is
-    told where. Nothing is deleted, so a bad update is undone by going back to
-    the folder that was already there.
-
-    Returns the folder the new copy is in.
-    """
-    import zipfile
-    here = os.path.dirname(os.path.abspath(sys.executable))
-    parent = os.path.dirname(here)
-    target = os.path.join(parent, "%s %s" % (C.APP_NAME, version))
-    suffix = 2
-    while os.path.exists(target):
-        target = os.path.join(parent, "%s %s (%d)"
-                              % (C.APP_NAME, version, suffix))
-        suffix += 1
-    with zipfile.ZipFile(zip_path) as archive:
-        archive.extractall(target)
-    # A zip that holds one top level folder unpacks to target/that/..., which
-    # is one folder deeper than anybody expects. Lift it if so.
-    entries = os.listdir(target)
-    if len(entries) == 1:
-        inner = os.path.join(target, entries[0])
-        if os.path.isdir(inner) and os.path.exists(
-                os.path.join(inner, "%s.exe" % C.APP_NAME)):
-            return inner
-    return target
-
+# ------------------------------------------------------------- velopack
 
 def is_frozen():
-    """Only a packaged build can be replaced by an installer.
-
-    Running from source there is no installed copy to upgrade, and offering one
-    would download an installer that overwrites a different copy of the app
-    than the one running.
-    """
+    import sys
     return bool(getattr(sys, "frozen", False))
 
 
-def is_portable():
-    """Is this the zip, unpacked wherever somebody put it.
+_manager_cache = {}
+#: Tests replace this to hand the client a stand-in manager.
+_make_manager = None
 
-    Both builds are frozen, so is_frozen() cannot tell them apart, and that is
-    the whole bug. HarmonicaPlayer, on Mastodon, 4 September 2026, running the
-    portable copy: "checked for updates, it sounded like it was downloading
-    something but it turns out it gave me the installer version and put a new
-    desktop shortcut that linked to installer instead of updating the portable
-    version". The portable copy passed the frozen check, downloaded the
-    installer and installed a SECOND copy somewhere else, while the one he was
-    running stayed on the old version. Nothing said so.
 
-    Inno Setup leaves its uninstaller beside the program it installed. Nothing
-    puts one in a zip. So: an uninstaller next door means this copy was
-    installed, and no uninstaller means it was unpacked.
+def _manager():
+    """The Velopack UpdateManager for this install. Raises when this copy was
+    not installed by Velopack (a source run, a plain folder)."""
+    if _make_manager is not None:
+        return _make_manager()
+    if "manager" not in _manager_cache:
+        import velopack
+        _manager_cache["manager"] = velopack.UpdateManager(
+            velopack.HttpSource(RELEASES_URL))
+    return _manager_cache["manager"]
+
+
+def is_installed():
+    """Whether Velopack installed this copy, so updates can be applied.
+
+    A source run and a bare unpacked folder both answer False, and for the
+    same reason: there is no installed copy for an update to replace.
     """
-    if not is_frozen():
-        return False
-    folder = os.path.dirname(os.path.abspath(sys.executable))
     try:
-        for entry in os.listdir(folder):
-            if entry.lower().startswith("unins") and entry.lower().endswith(".exe"):
-                return False
-    except OSError:
+        _manager()
+        return True
+    except Exception:
         return False
-    return True
 
 
-def zip_for(info):
-    """The portable download named in the manifest, or None.
+def is_portable():
+    """A Velopack portable copy. It updates the same way as an installed one,
+    so nothing in the flow branches on this; it is here for the About box
+    and the selftest."""
+    try:
+        return bool(_manager().get_is_portable())
+    except Exception:
+        return False
 
-    Manifests published before this existed do not carry one, and a portable
-    copy meeting one of those is told to fetch the zip by hand rather than
-    handed an installer it must not run.
+
+def installed_version():
+    try:
+        return str(_manager().get_current_version())
+    except Exception:
+        return C.APP_VERSION
+
+
+def channel_state():
+    """One sentence for the About box and the selftest."""
+    if not is_frozen():
+        return "source build, correctly disabled"
+    if not is_installed():
+        return "frozen but not installed by Velopack, so it cannot update itself"
+    return "live, %s" % ("portable copy" if is_portable() else "installed copy")
+
+
+# ------------------------------------------------------------- the flow
+
+def check(current_version=None):
+    """Is there a newer build the TG Studios key vouches for?
+
+    Returns (available, info, message). `info` is a plain dict the window can
+    read (version, notes, size, url) and carries the Velopack update object
+    under "velopack" for download() and run_installer().
     """
-    if not info:
-        return None
-    url = info.get("zip_url")
-    if not url:
-        return None
-    return {"url": url, "sha256": info.get("zip_sha256", ""),
-            "size": info.get("zip_size", 0), "version": info.get("version", "")}
+    current = current_version or C.APP_VERSION
+    manifest, message = fetch_manifest()
+    if manifest is None:
+        return False, None, message
+
+    listed = manifest.get("version", "")
+    info = {"version": listed, "notes": manifest.get("notes", ""),
+            "url": manifest.get("url", ""), "size": manifest.get("package_size", 0),
+            "manifest": manifest}
+    if parse_version(listed) <= parse_version(current):
+        return False, info, "You have the newest version."
+
+    try:
+        manager = _manager()
+    except Exception:
+        return False, info, ("Version %s is available, but this copy was not "
+                             "installed by the installer, so it cannot update "
+                             "itself. Get the new version from tgstudios.app."
+                             % listed)
+    try:
+        update = manager.check_for_updates()
+    except Exception as exc:
+        return False, info, "Could not reach the update server. %s" % exc
+    if update is None:
+        return False, info, ("The update server lists version %s but the "
+                             "download for it is not there yet. Try again "
+                             "later." % listed)
+    target = update.TargetFullRelease
+    ok, why = vouches(manifest, target.Version, target.SHA256, target.Size)
+    if not ok:
+        return False, None, ("The update was not vouched for by the TG "
+                             "Studios signature and was refused: %s. Nothing "
+                             "was changed." % why)
+    info.update({"version": target.Version, "size": target.Size,
+                 "velopack": update,
+                 "delta": bool(getattr(update, "DeltasToTarget", None))})
+    return True, info, ("Version %s is available. You have %s."
+                        % (target.Version, current))
 
 
-# --------------------------------------------------------------- throttling
-#
-# Same shape as sync.py, and a separate stamp file on purpose: the prompt feed
-# and the app feed are checked on their own schedules, and one failing must not
-# suppress the other.
+_downloaded = {}
 
+
+def download(info, progress=None, portable=False):
+    """Fetch the update. Returns (token_or_None, message).
+
+    Velopack fetches the packages into its own store and verifies each one
+    against the SHA256 in the feed, which is the SHA256 the signed manifest
+    vouched for in check(). `progress(done, total)` is called from the
+    download thread with bytes, so the shared progress dialog can say how
+    far along it is; raising Stopped from it stops the download.
+
+    The token is the version string; hand it to run_installer(). `portable`
+    is accepted for the shared flow's sake and makes no difference here: a
+    portable Velopack copy updates in place like an installed one.
+    """
+    update = (info or {}).get("velopack")
+    if update is None:
+        return None, "Check for updates first. Nothing was changed."
+    try:
+        total = int(info.get("size") or update.TargetFullRelease.Size or 0)
+    except Exception:
+        total = 0
+    state = {"stopped": False}
+
+    def step(percent):
+        if progress is None:
+            return
+        try:
+            done = int(total * float(percent) / 100.0) if total else int(percent)
+            progress(done, total)
+        except Stopped:
+            state["stopped"] = True
+            raise
+        except Exception:
+            # A failing progress bar must never lose an update that is
+            # otherwise arriving perfectly well.
+            pass
+
+    try:
+        _manager().download_updates(update, step)
+    except Stopped:
+        return None, "The download was stopped. Nothing was changed."
+    except Exception as exc:
+        if state["stopped"]:
+            return None, "The download was stopped. Nothing was changed."
+        return None, "Download failed. %s" % exc
+    if state["stopped"]:
+        return None, "The download was stopped. Nothing was changed."
+    version = str(info.get("version") or update.TargetFullRelease.Version)
+    _downloaded[version] = update
+    return version, "Downloaded %s." % version
+
+
+def run_installer(token, before_restart=None):
+    """Apply the downloaded update and restart the app.
+
+    The name is the one the shared flow calls; there is no installer window
+    any more. Velopack swaps the current folder and starts the new version,
+    and this process ends as part of that. Everything that must be written
+    before the process ends (settings, the autosave, the clean exit marker)
+    happens here first: `before_restart` is the window's flush, and the
+    marker is cleared so the next start does not offer a recovery for a
+    close that was on purpose.
+    """
+    update = _downloaded.get(str(token))
+    if update is None:
+        return False, "Download the update first. Nothing was changed."
+    if before_restart is not None:
+        try:
+            before_restart()
+        except Exception:
+            pass
+    try:
+        from . import paths
+        paths.mark_clean_exit()
+    except Exception:
+        pass
+    try:
+        _manager().apply_updates_and_restart(update)
+        return True, "Installing. The app will close and reopen by itself."
+    except Exception as exc:
+        return False, "Could not start the update. %s" % exc
+
+
+apply = run_installer
+
+
+# ------------------------------------------------------------ throttling
 
 def _stamp_path(config_dir):
     return os.path.join(config_dir, STAMP_FILE)
@@ -378,7 +401,6 @@ def last_checked(config_dir):
 
 
 def stamp_check(config_dir, when=None):
-    import time
     payload = {"last_check": float(when if when is not None else time.time())}
     try:
         with open(_stamp_path(config_dir), "w", encoding="utf-8") as fh:
@@ -388,21 +410,21 @@ def stamp_check(config_dir, when=None):
 
 
 def should_check(config_dir, interval_hours=DEFAULT_INTERVAL_HOURS, now=None):
-    import time
     now = time.time() if now is None else now
     elapsed = now - last_checked(config_dir)
-    # A clock that moved backwards must not lock out checking until it catches
-    # up, so a negative gap counts as due.
+    # A clock that moved backwards must not lock out checking until it
+    # catches up, so a negative gap counts as due.
     return elapsed < 0 or elapsed >= interval_hours * 3600
 
 
 def auto_check(config_dir, force=False, interval_hours=DEFAULT_INTERVAL_HOURS):
     """Returns (available, info, message_or_None).
 
-    None as the message means nothing happened and the user should not be told
-    anything, so a normal launch stays silent.
+    None as the message means nothing happened and the user should not be
+    told anything, so a normal launch stays silent. Only an installed copy
+    checks on its own; a source run never does unless forced.
     """
-    if not is_frozen() and not force:
+    if not is_installed() and not force:
         return False, None, None
     if not force and not should_check(config_dir, interval_hours):
         return False, None, None
@@ -413,222 +435,76 @@ def auto_check(config_dir, force=False, interval_hours=DEFAULT_INTERVAL_HOURS):
     return True, info, message
 
 
-# ---------------------------------------------------------------------------
-# Replacing a portable copy with itself
-#
-# Tony, 5 September 2026: "portable comes with the intended purpose of
-# replacing with the new executable that's downloaded."
-#
-# Quite so, and Windows will not let a running executable be overwritten. The
-# way round it is the new copy doing the work: this one unpacks the download
-# beside itself, starts the NEW executable with --finish-update, and quits.
-# The new one waits for this process to disappear, replaces the folder it came
-# from, starts the app again from the original path and exits. From the
-# outside it is one restart.
-#
-# The swap is written so that a failure halfway is recoverable: the old
-# payload is RENAMED rather than deleted, and put back if anything goes wrong.
-# ---------------------------------------------------------------------------
+# ------------------------------------------- after a restart, and first run
 
-#: Where a download is unpacked while it waits to replace the running copy.
-#: A dot, so it sorts out of the way, and the version, so two attempts cannot
-#: collide.
-STAGING_PREFIX = "." + TEMP_PREFIX
-
-#: The flag the new copy is started with. Not a secret, just a word nobody
-#: would type by accident.
-FINISH_FLAG = "--finish-update"
+#: Set by main.py from Velopack's hooks before the window exists, so the
+#: window can say "updated to version X" once, or show the first run hint.
+RESTARTED_AFTER_UPDATE = ""
+FIRST_RUN = False
 
 
-def app_folder():
-    """The folder this copy runs from."""
-    return os.path.dirname(os.path.abspath(sys.executable))
+def note_restarted(version=None):
+    global RESTARTED_AFTER_UPDATE
+    RESTARTED_AFTER_UPDATE = str(version or C.APP_VERSION)
 
 
-def staging_for(version, parent=None):
-    return os.path.join(parent or os.path.dirname(app_folder()),
-                        "%s%s" % (STAGING_PREFIX, version or "new"))
+def note_first_run(version=None):
+    global FIRST_RUN
+    FIRST_RUN = True
 
 
-def can_replace(folder=None):
-    """Whether this copy could be replaced where it stands.
+# ------------------------------------------------------- release checking
 
-    A zip unpacked to a read only share, or to Program Files without rights,
-    cannot be. Asked by writing a file rather than by reading permissions,
-    because permissions on Windows are a poor guide to what will happen.
+def inspect_feed(fetch=None):
+    """Read the live feed the way a release check should, from any machine.
+
+    Fetches the signed manifest and the Velopack index, checks that the
+    newest full package in the index is the one the manifest vouches for,
+    and that the package and the Setup on the site are really there at the
+    sizes claimed. Returns (ok, lines) where lines say what was found. Used
+    by tools/release_app.py verify and by the TG Studios release checker;
+    it needs no Velopack install, only the network.
     """
-    folder = folder or app_folder()
-    probe = os.path.join(folder, WRITE_PROBE)
+    fetch = fetch or _fetch
+    lines = []
     try:
-        with open(probe, "w") as handle:
-            handle.write("x")
-        os.remove(probe)
-        return True
-    except OSError:
-        return False
-
-
-def unpack_staging(zip_path, version, parent=None):
-    """Unpack a download into its staging folder. Returns where the exe is."""
-    import zipfile
-    target = staging_for(version, parent)
-    if os.path.isdir(target):
-        shutil.rmtree(target, ignore_errors=True)
-    with zipfile.ZipFile(zip_path) as archive:
-        archive.extractall(target)
-    entries = os.listdir(target)
-    if len(entries) == 1:
-        inner = os.path.join(target, entries[0])
-        if os.path.isdir(inner) and os.path.exists(
-                os.path.join(inner, "%s.exe" % C.APP_NAME)):
-            return inner
-    return target
-
-
-def clean_staging(parent=None):
-    """Remove any staging folder left behind. Called at startup.
-
-    A swap that worked leaves its own folder there, because the copy doing the
-    work was running from inside it and could not delete the ground it stood
-    on. The copy that starts afterwards can.
-    """
-    parent = parent or os.path.dirname(app_folder())
-    removed = []
-    try:
-        entries = os.listdir(parent)
-    except OSError:
-        return removed
-    for entry in entries:
-        if entry.startswith(STAGING_PREFIX):
-            path = os.path.join(parent, entry)
-            if os.path.isdir(path):
-                shutil.rmtree(path, ignore_errors=True)
-                if not os.path.exists(path):
-                    removed.append(path)
-    return removed
-
-
-def _still_running(pid):
-    """Whether that process is still there. Windows only, and best effort."""
-    if not pid:
-        return False
-    try:
-        import ctypes
-        SYNCHRONIZE = 0x00100000
-        handle = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False,
-                                                    int(pid))
-        if not handle:
-            return False
-        # 0 means it is already signalled, which for a process means exited.
-        signalled = ctypes.windll.kernel32.WaitForSingleObject(handle, 0) == 0
-        ctypes.windll.kernel32.CloseHandle(handle)
-        return not signalled
-    except Exception:
-        return False
-
-
-def _wait_for_exit(pid, seconds=90.0):
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        if not _still_running(pid):
-            # A moment more. The process is gone but Windows can hold the
-            # file locks for an instant after, and antivirus for longer.
-            time.sleep(0.4)
-            return True
-        time.sleep(0.2)
-    return False
-
-
-def _retry(action, attempts=25, wait=0.4):
-    """Do something that a lock might refuse, for a while, then give up."""
-    last = None
-    for _ in range(attempts):
-        try:
-            action()
-            return None
-        except OSError as exc:
-            last = exc
-            time.sleep(wait)
-    return last
-
-
-def finish_update(target, pid, source=None):
-    """Replace ``target`` with the copy this is running from. The new copy runs
-    this, never the old one.
-
-    Returns (ok, message). Nothing here may raise: it is the last thing
-    standing between somebody and a broken folder.
-    """
-    source = source or app_folder()
-    target = os.path.abspath(target)
-    if os.path.abspath(source) == target:
-        return False, "The new copy and the old one are the same folder."
-    if not _wait_for_exit(pid):
-        return False, ("The copy being replaced is still running, so nothing "
-                       "was changed.")
-
-    payload = os.path.join(target, "_internal")
-    kept = payload + ".replaced"
-    if os.path.isdir(kept):
-        shutil.rmtree(kept, ignore_errors=True)
-
-    # RENAMED, not removed. If the copy below fails there is still a working
-    # app in that folder and this puts it back.
-    moved = False
-    if os.path.isdir(payload):
-        failed = _retry(lambda: os.rename(payload, kept))
-        if failed is not None:
-            return False, ("Could not move the old files aside: %s" % failed)
-        moved = True
-
-    try:
-        for entry in os.listdir(source):
-            src = os.path.join(source, entry)
-            dst = os.path.join(target, entry)
-            if os.path.isdir(src):
-                shutil.copytree(src, dst, dirs_exist_ok=True)
-            else:
-                failed = _retry(lambda s=src, d=dst: shutil.copy2(s, d))
-                if failed is not None:
-                    raise failed
+        manifest, message = read_envelope(fetch(MANIFEST_URL, 1024 * 1024))
     except Exception as exc:
-        if moved:
-            shutil.rmtree(payload, ignore_errors=True)
-            try:
-                os.rename(kept, payload)
-            except OSError:
-                pass
-        return False, ("The update could not be written, so the copy you had "
-                       "has been put back. %s" % exc)
+        return False, ["could not fetch the manifest: %s" % exc]
+    if manifest is None:
+        return False, [message]
+    lines.append("manifest: version %s, signature verified" % manifest.get("version"))
 
-    shutil.rmtree(kept, ignore_errors=True)
-    return True, "Updated in place."
-
-
-def relaunch(target):
-    """Start the app again from where it was, and let this copy end."""
-    exe = os.path.join(target, "%s.exe" % C.APP_NAME)
-    if not os.path.exists(exe):
-        return False
     try:
-        subprocess.Popen([exe], cwd=target, close_fds=True)
-        return True
-    except OSError:
-        return False
+        index = json.loads(fetch(RELEASES_URL + RELEASES_FILE, 1024 * 1024).decode("utf-8"))
+    except Exception as exc:
+        return False, lines + ["could not fetch %s: %s" % (RELEASES_FILE, exc)]
+    fulls = [a for a in index.get("Assets", []) if str(a.get("Type", "")).lower() == "full"]
+    if not fulls:
+        return False, lines + ["the feed lists no full package"]
+    newest = max(fulls, key=lambda a: parse_version(a.get("Version")))
+    ok, why = vouches(manifest, newest.get("Version"), newest.get("SHA256"), newest.get("Size"))
+    lines.append("feed: newest full package %s, %s"
+                 % (newest.get("FileName"), "vouched" if ok else "REFUSED: " + why))
+    if not ok:
+        return False, lines
 
+    package_url = RELEASES_URL + newest.get("FileName", "")
+    got = _head(package_url)
+    if got != int(newest.get("Size") or -2):
+        return False, lines + ["the package at %s is %d bytes, the feed says %s"
+                               % (package_url, got, newest.get("Size"))]
+    lines.append("package: present at the size the feed claims")
 
-def start_swap(staging_exe_folder, target, pid):
-    """Ask the newly unpacked copy to replace this one. Called by the OLD copy.
-
-    Returns True if the new copy was started. Whoever calls this then has to
-    close, promptly: the new one is waiting for exactly that.
-    """
-    exe = os.path.join(staging_exe_folder, "%s.exe" % C.APP_NAME)
-    if not os.path.exists(exe):
-        return False
-    try:
-        subprocess.Popen([exe, FINISH_FLAG, target, str(pid)],
-                         cwd=staging_exe_folder, close_fds=True)
-        return True
-    except OSError:
-        return False
+    setup_url = manifest.get("url", "")
+    if setup_url:
+        got = _head(setup_url)
+        try:
+            want = int(manifest.get("size") or -2)
+        except (TypeError, ValueError):
+            want = -2
+        if got != want:
+            return False, lines + ["the installer at %s is %d bytes, the manifest says %s"
+                                   % (setup_url, got, manifest.get("size"))]
+        lines.append("installer: present at the size the manifest claims")
+    return True, lines
