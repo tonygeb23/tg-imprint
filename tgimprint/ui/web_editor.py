@@ -65,13 +65,15 @@ def sanitise(body_html):
 class EditorView(wx.Panel):
     """The panel holding the WebView2 and the asynchronous API around it."""
 
-    def __init__(self, parent, page=None, lang="en-US", textbox_role=True):
+    def __init__(self, parent, page=None, lang="en-US", textbox_role=True,
+                 display=None):
         super().__init__(parent)
         self.ready = False
         self.loads = 0
         self._next_id = 1
         self._pending = {}              # id -> (callback, issued_at)
         self._page = dict(page or {})
+        self._display = editor_page.clean_display(display)
         self._lang = lang
         self._textbox_role = textbox_role
         self._queued_body = None
@@ -102,7 +104,8 @@ class EditorView(wx.Panel):
         html = editor_page.build_page(keymap.page_bindings(), keymap.DENY_CHORDS,
                                       lang=self._lang, page=self._page,
                                       body_html=body_html,
-                                      textbox_role=self._textbox_role)
+                                      textbox_role=self._textbox_role,
+                                      display=self._display)
         self.web.SetPage(html, "about:blank")
 
     def _on_loaded(self, event):
@@ -232,6 +235,30 @@ class EditorView(wx.Panel):
         self._page = dict(page or {})
         if self.ready:
             self.call("setPage", editor_page.page_css_for(self._page))
+
+    def set_display(self, display, callback=None):
+        """The screen settings: text size, page theme, caret, focus ring,
+        bold body text and line spacing. All of them are the screen only.
+
+        They are kept here as well as sent, so a page rebuilt after a
+        reload starts with them rather than with the defaults.
+        """
+        self._display = editor_page.clean_display(display)
+        if self.ready:
+            self.call("setDisplay", self._display, callback=callback)
+        elif callback is not None:
+            wx.CallAfter(callback, None, "")
+        return self._display
+
+    def display(self):
+        return dict(self._display)
+
+    def set_zoom(self, percent, callback=None):
+        """The text size in percent, applied and remembered here."""
+        self._display = editor_page.clean_display(dict(self._display, zoom=percent))
+        if self.ready:
+            self.call("setZoom", self._display["zoom"], callback=callback)
+        return self._display["zoom"]
 
     def set_lang(self, lang):
         self._lang = lang or "en"

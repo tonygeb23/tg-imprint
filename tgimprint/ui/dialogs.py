@@ -50,6 +50,85 @@ def name_field(control, name):
     return control
 
 
+class FocusRing:
+    """A thicker ring round whichever registered control has the keyboard.
+
+    Windows draws a one pixel dotted rectangle, which is not enough for
+    somebody with low vision, and there is no system setting for its width.
+    So the parent draws the ring itself: it is painted in the highlight
+    colour at the width the Display page asks for, in the border the sizer
+    already leaves round the control, and it moves with the focus.
+
+    It never takes focus, never eats an event and never changes a layout.
+    """
+
+    def __init__(self, parent, controls, width=3):
+        self.parent = parent
+        self.width = max(0, int(width))
+        self.controls = []
+        self.focused = None
+        parent.Bind(wx.EVT_PAINT, self._on_paint)
+        for control in controls:
+            self.watch(control)
+
+    def watch(self, control):
+        if control is None or control in self.controls:
+            return
+        self.controls.append(control)
+        control.Bind(wx.EVT_SET_FOCUS, self._on_focus)
+        control.Bind(wx.EVT_KILL_FOCUS, self._on_blur)
+
+    def set_width(self, width):
+        self.width = max(0, int(width))
+        self._refresh()
+
+    def _on_focus(self, event):
+        self.focused = event.GetEventObject()
+        self._refresh()
+        event.Skip()
+
+    def _on_blur(self, event):
+        if self.focused is event.GetEventObject():
+            self.focused = None
+        self._refresh()
+        event.Skip()
+
+    def _refresh(self):
+        try:
+            self.parent.Refresh()
+        except Exception:
+            pass
+
+    def _on_paint(self, event):
+        event.Skip()
+        dc = wx.PaintDC(self.parent)
+        control = self.focused
+        if control is None or self.width <= 0:
+            return
+        try:
+            if not control or not control.IsShown():
+                return
+            rect = control.GetRect()
+        except Exception:
+            return
+        colour = wx.SystemSettings.GetColour(wx.SYS_COLOUR_HIGHLIGHT)
+        dc.SetBrush(wx.TRANSPARENT_BRUSH)
+        for step in range(self.width):
+            dc.SetPen(wx.Pen(colour, 1))
+            dc.DrawRectangle(rect.x - 1 - step, rect.y - 1 - step,
+                             rect.width + 2 + step * 2, rect.height + 2 + step * 2)
+
+
+def focus_ring(parent, controls, width=3):
+    """A FocusRing kept alive on the parent, or None when it cannot be made."""
+    try:
+        ring = FocusRing(parent, controls, width)
+    except Exception:
+        return None
+    parent._tgimprint_focus_ring = ring
+    return ring
+
+
 class QuietBitmap(wx.StaticBitmap):
     """A preview that refuses focus, so Tab never lands on a picture."""
 

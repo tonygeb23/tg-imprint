@@ -145,8 +145,17 @@ for key, action in keymap.CONTRACT.items():
 check("Ctrl+I is italic and Ctrl+Shift+I is its alias",
       keymap.entry("italic").keys == ("Ctrl+I", "Ctrl+Shift+I"))
 check("Ctrl+Shift+P inserts a picture", "Ctrl+Shift+P" in keymap.entry("insert_picture").keys)
-check("there is no font dialog and no Ctrl+Shift+F",
-      "font" not in keymap.BY_ACTION and not any("Ctrl+Shift+F" in e.keys for e in entries))
+# CONVENTIONS.md keeps Ctrl+Shift+F away from a font dialog, which this
+# program does not have: the document's font is a document property, not a
+# selection. Tony gave the key to the form filler on 2026-09-09.
+check("there is no font dialog", "font" not in keymap.BY_ACTION)
+check("Ctrl+Shift+F fills in a PDF form",
+      "Ctrl+Shift+F" in keymap.entry("fill_form").keys)
+check("the toolbar label choice is three radio items in View",
+      all(keymap.entry(a).kind == "radio" and keymap.entry(a).group == "toolbar"
+          for a in ("toolbar_icons", "toolbar_icons_labels", "toolbar_labels")))
+check("View has a Display options item with no key of its own",
+      keymap.entry("display_options").keys == ())
 check("Alt+F4 exits and nothing else uses it",
       chords.get("alt+f4") == ["exit"], chords.get("alt+f4"))
 check("Escape is bound to nothing", "escape" not in chords)

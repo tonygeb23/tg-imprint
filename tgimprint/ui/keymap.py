@@ -192,8 +192,12 @@ ENTRIES = [
       "Ask an AI service to describe the whole document."),
     E("check_pdf", "&Check accessibility of a PDF...", ("Ctrl+Shift+A",), "app",
       "Run the accessibility checks on any PDF and read the report."),
+    E("fill_form", "&Fill in a PDF form...", ("Ctrl+Shift+F",), "app",
+      "Open a PDF that has form fields and fill them in from a list, one "
+      "field at a time. A PDF with no fields can be looked over for the "
+      "blanks first."),
     E("preferences", "&Preferences...", ("Ctrl+,",), "app",
-      "Spoken feedback, document defaults and the AI services."),
+      "Spoken feedback, document defaults, the screen and the AI services."),
 
     # ------------------------------------------------------------- View ----
     E("next_heading", "&Next heading", ("F6",), "page",
@@ -207,7 +211,18 @@ ENTRIES = [
     E("zoom_in", "Zoom &in", ("Ctrl+=",), "page", "Make the page larger on screen."),
     E("zoom_out", "Zoom &out", ("Ctrl+-",), "page", "Make the page smaller on screen."),
     E("zoom_reset", "&Actual size", ("Ctrl+0",), "page",
-      "Show the page at its normal size."),
+      "Show the page at its normal size, one hundred percent."),
+    E("display_options", "&Display options...", (), "app",
+      "Text size, page colours, the caret, the focus ring, bold text and "
+      "line spacing. All of them are the screen only: an exported PDF is "
+      "always black text on a white page."),
+    E("toolbar_icons", "&Icons only", (), "app",
+      "Show the toolbar as icons with no words.", kind="radio", group="toolbar"),
+    E("toolbar_icons_labels", "Icons wit&h labels", (), "app",
+      "Show the toolbar as icons with a word under each one.", kind="radio",
+      group="toolbar"),
+    E("toolbar_labels", "&Labels only", (), "app",
+      "Show the toolbar as words with no icons.", kind="radio", group="toolbar"),
 
     # ------------------------------------------------------------- Help ----
     E("keyboard_help", "&Keyboard shortcuts", ("F1",), "app",
@@ -245,10 +260,13 @@ MENUS = [
                  "-", "indent", "outdent"]),
     ("&Insert", ["insert_link", "insert_picture", "insert_table", "-",
                  "picture_properties"]),
-    ("&Tools", ["describe_picture", "describe_document", "check_pdf", "-",
-                "preferences"]),
+    ("&Tools", ["describe_picture", "describe_document", "-", "check_pdf",
+                "fill_form", "-", "preferences"]),
     ("&View", ["next_heading", "previous_heading", "structure", "pictures",
-               "-", "zoom_in", "zoom_out", "zoom_reset"]),
+               "-", "zoom_in", "zoom_out", "zoom_reset", "-",
+               ("&Toolbar labels", ["toolbar_icons", "toolbar_icons_labels",
+                                    "toolbar_labels"]),
+               "display_options"]),
     ("&Help", ["keyboard_help", "user_guide", "-", "check_updates", "donate",
                "-", "about"]),
 ]
@@ -453,8 +471,8 @@ def render_markdown():
         "Ctrl+Alt+1 to Ctrl+Alt+6 set heading levels 1 to 6, Ctrl+Alt+0 makes "
         "normal text, Ctrl+Alt+8 a bullet list and Ctrl+Alt+9 a numbered list. "
         "On German, French, Polish, Spanish and Portuguese keyboards Ctrl+Alt "
-        "is AltGr and some of those chords type a character instead, so Easy "
-        "PDF acts on them only when the key really was the digit. The same "
+        "is AltGr and some of those chords type a character instead, so TG "
+        "Imprint acts on them only when the key really was the digit. The same "
         "commands are also on Ctrl+Shift+0 to Ctrl+Shift+9, which work on "
         "every layout.",
         "",

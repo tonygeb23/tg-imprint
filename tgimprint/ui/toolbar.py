@@ -19,6 +19,36 @@ LAYOUT = ("new", "open", "save", None, "style", None, "bold", "italic",
           "align_left", "align_center", "align_right", "align_justify", None,
           "insert_link", "insert_picture", "insert_table", None, "export_pdf")
 
+#: The short label each tool shows when labels are on. A toolbar label is
+#: read by a screen reader from the accessible name, not from this, so these
+#: are for the eye: as short as they can be and still mean something.
+SHORT = {"insert_link": "Link", "insert_picture": "Picture",
+         "insert_table": "Table", "export_pdf": "PDF",
+         "align_left": "Left", "align_center": "Centre",
+         "align_right": "Right", "align_justify": "Justify",
+         "strike": "Strike", "bullets": "Bullets", "numbers": "Numbers",
+         "normal": "Normal", "underline": "Under"}
+
+#: The tools that keep their label when the bar is squeezed.
+#:
+#: Measured 2026-09-09 on a 1920 by 1080 display, maximised, with the client
+#: area 1280 wide at 100 percent and 1920 at 150:
+#:
+#:                     100 percent   150 percent
+#:   icons only            640           686
+#:   icons with labels    1162          1640
+#:   squeezed              946          1280
+#:   labels only          1162          1640
+#:
+#: Words alone are no narrower than words under icons: with TB_NOICONS wx
+#: still sizes every button to the widest label, and it only saves height.
+#:
+#: So the full labelled bar fits a maximised window at both scales, and the
+#: squeeze is for a window somebody has made smaller. Then these eight tools
+#: keep their words and the rest fall back to their icon.
+KEEP_LABEL = ("new", "open", "save", "bold", "bullets", "align_left",
+              "insert_picture", "export_pdf")
+
 #: The paragraph style choice, in the order it lists them, each naming the
 #: keymap action that applies it and the block names the editor reports.
 STYLES = (("Normal text", "normal", ("p",)),
@@ -34,19 +64,34 @@ STYLES = (("Normal text", "normal", ("p",)),
 
 
 class EditorToolBar(wx.ToolBar):
-    def __init__(self, frame, id_of, show_labels=True):
+    """The bar, in the shape the Display page asks for.
+
+    `mode` is "icons", "icons_labels" or "labels" (settings.TOOLBAR_LABEL_MODES).
+    Somebody who cannot make out a 20 pixel glyph asked for words, so the
+    choice is honoured: the bar is never silently turned back into icons.
+    When the labelled bar is wider than the window, `squeeze` is what gives
+    instead, and every tool keeps its tooltip and its accessible name
+    whatever is drawn.
+    """
+
+    def __init__(self, frame, id_of, mode="icons_labels", squeeze=0):
+        mode = mode if mode in ("icons", "icons_labels", "labels") else "icons_labels"
         style = wx.TB_HORIZONTAL | wx.TB_FLAT
-        if show_labels:
+        if mode != "icons":
             style |= wx.TB_TEXT
+        if mode == "labels":
+            style |= wx.TB_NOICONS
         super().__init__(frame, style=style)
         self.frame = frame
         self.id_of = id_of
-        self.show_labels = bool(show_labels)
+        self.mode = mode
+        self.squeeze = int(squeeze)
+        self.show_labels = mode != "icons"
         self._tools = {}
         self._syncing = False
         size = int(round(20 * frame.GetDPIScaleFactor()))
-        self.SetToolBitmapSize(wx.Size(size, size))
         self._size = size
+        self.SetToolBitmapSize(wx.Size(size, size))
         for item in LAYOUT:
             if item is None:
                 self.AddSeparator()
@@ -58,27 +103,31 @@ class EditorToolBar(wx.ToolBar):
         self.Bind(wx.EVT_SYS_COLOUR_CHANGED, self._on_colours)
 
     def needed_width(self):
-        """The width every tool needs, as laid out. Measured 2026-09-09: with
-        labels at 150 percent the bar is about 1950 pixels, wider than a
-        1920 pixel display even maximised, so the last tools were clipped.
-        The window compares this with its client width and rebuilds the
-        bar without labels when they do not fit (the labels stay in the
-        tooltips and the accessible names)."""
+        """The width every tool needs, as laid out. The window compares this
+        with its client width and squeezes the labels when they do not
+        fit, rather than throwing the person's choice away."""
         return self.GetBestSize().width
+
+    def label_for(self, action):
+        """The word this tool shows, which is "" when it shows none."""
+        if self.mode == "icons":
+            return ""
+        short = SHORT.get(action, keymap.entry(action).plain_label.rstrip("."))
+        if self.squeeze and self.mode == "icons_labels" and action not in KEEP_LABEL:
+            return ""
+        return short
 
     def _add_tool(self, action):
         entry = keymap.entry(action)
         label = entry.plain_label.rstrip(".")
-        short = {"insert_link": "Link", "insert_picture": "Picture",
-                 "insert_table": "Table", "export_pdf": "Export PDF",
-                 "align_left": "Left", "align_center": "Centre",
-                 "align_right": "Right", "align_justify": "Justify",
-                 "strike": "Strike", "bullets": "Bullets", "numbers": "Numbers",
-                 "normal": "Normal"}.get(action, label)
         kind = wx.ITEM_CHECK if entry.kind == "check" else wx.ITEM_NORMAL
         tip = label + (" (%s)" % entry.primary if entry.primary else "")
-        tool = self.AddTool(self.id_of(action), short, icons.draw(action, self._size),
+        tool = self.AddTool(self.id_of(action), self.label_for(action),
+                            icons.draw(action, self._size),
                             shortHelp=tip, kind=kind)
+        # The label on the bar can be squeezed away; the name a screen
+        # reader reads never is.
+        tool.SetLongHelp(tip)
         self._tools[action] = tool
 
     def _add_style_choice(self):

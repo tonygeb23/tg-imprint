@@ -45,6 +45,7 @@ from .. import constants as C
 from .. import paths
 from .. import speech
 from .. import updatedialog
+from .. import settings as settings_mod
 from ..settings import Settings
 from . import dialogs
 from . import keymap
@@ -83,7 +84,11 @@ S = {
               "justify": "Justified"},
     "indent": "List level increased", "outdent": "List level decreased",
     "next_cell": "Next cell", "previous_cell": "Previous cell", "row_added": "Row added",
-    "zoom": "Zoom %d percent",
+    "zoom": "Text size %d percent",
+    "display_applied": "Display settings applied.",
+    "toolbar_labels_set": "Toolbar: %s.",
+    "title_set": "Title set to %s.",
+    "title_cleared": "Title cleared.",
     "heading_at": "Heading %d: %s",
     "no_more_headings": "No more headings",
     "no_headings_before": "No headings before this",
@@ -140,7 +145,6 @@ S = {
     "link_inserted": "Link inserted.",
     "link_updated": "Link updated.",
     "table_inserted": "Table inserted, %d rows and %d columns. The caret is in the first cell.",
-    "title_set": "Title set to %s.",
     "title_prompt": "Document title:",
     "properties_applied": "Document properties applied.",
     "pictures_need_alt": "%d picture%s need%s a description.",
@@ -172,9 +176,35 @@ S = {
     "engine_unknown": "not checked (the engine module is not part of this build yet).",
     "context_menu_no_page": "",
     "check_report_title": "Accessibility check",
+    "forms_module_missing": "Filling in PDF forms is not part of this build yet.",
+    "form_opening": "Opening %s.",
+    "form_open_failed": "That PDF could not be opened as a form. %s",
     "export_report_title": "PDF written",
     "open_notes_title": "Notes from opening this file",
 }
+
+#: Window titles and file dialog titles, listed in docs/STRINGS.md with
+#: everything else the window shows (defect 10 of the round 2 review).
+TITLES = {
+    "open": "Open a document",
+    "save_as": "Save as",
+    "save_as_web": "Save as web page",
+    "export": "Export PDF",
+    "check": "Check a PDF",
+    "pictures_missing": "Pictures without descriptions",
+    "remove_picture": "Remove picture",
+    "remove_table": "Remove table",
+    "could_not_open": "Could not open",
+    "could_not_export": "The PDF could not be made",
+    "form_open": "Choose a PDF form",
+}
+
+#: Above this many characters a pasted fragment is cleaned on a thread.
+#: Measured 2026-09-09 with htmlclean.normalise on Word style paragraphs:
+#: 3 KB took 2.4 milliseconds, 33 KB took 20, and 164 KB, about fifty pages,
+#: took 99. Forty thousand characters is about 25 milliseconds, which is
+#: under a blink, and everything larger goes off the UI thread.
+PASTE_ON_THREAD_CHARS = 40000
 
 UPDATE_CHECK_DELAY_MS = 4000
 AUTOSAVE_MS = C.AUTOSAVE_SECONDS * 1000
@@ -214,6 +244,7 @@ class MainFrame(wx.Frame):
         self._update_box = None
         self._restart_body = None
         self._closing = False
+        self._pumping = False
 
         # Ids and menus from the one list.
         self._ids = {}
@@ -231,16 +262,20 @@ class MainFrame(wx.Frame):
         for wid in self._recent_ids:
             self.Bind(wx.EVT_MENU, self._on_recent, id=wid)
         self.Bind(wx.EVT_MENU_OPEN, self._on_menu_open)
+        # A native keymap entry is left out of the wx accelerator table, so
+        # the Applications key and Shift+F10 reached nothing when focus was
+        # on the toolbar (defect 14 of the round 2 review).
+        self.Bind(wx.EVT_CONTEXT_MENU, self.on_context_menu)
 
-        self.toolbar = toolbar_mod.EditorToolBar(
-            self, self.id_of, show_labels=bool(self.settings.get("toolbar_labels", True)))
-        self.SetToolBar(self.toolbar)
-        self._toolbar_widths = {self.toolbar.show_labels: self.toolbar.needed_width()}
+        self._toolbar_widths = {}
+        self.toolbar = None
+        self._rebuild_toolbar(self.toolbar_mode(), 0)
         self._fit_timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, lambda _e: self._fit_toolbar(), self._fit_timer)
         self.Bind(wx.EVT_SIZE, self._on_size)
 
-        self.editor = EditorView(self, page=self._document_page(), lang=self.meta["lang"])
+        self.editor = EditorView(self, page=self._document_page(), lang=self.meta["lang"],
+                                 display=self.settings.display())
         self.editor.Bind(EVT_EDITOR_MESSAGE, self._on_editor_message)
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer.Add(self.editor, 1, wx.EXPAND)
@@ -255,6 +290,8 @@ class MainFrame(wx.Frame):
         self._restore_geometry()
         self.SetMinSize(self.FromDIP(wx.Size(640, 440)))
         self._fit_toolbar()
+        self._sync_view_menu()
+        self.toolbar.Bind(wx.EVT_CONTEXT_MENU, self.on_context_menu)
         self._update_title()
         self.Bind(wx.EVT_CLOSE, self._on_close)
 
@@ -276,38 +313,103 @@ class MainFrame(wx.Frame):
         if timer is not None:
             timer.StartOnce(150)
 
-    def _fit_toolbar(self):
-        """Labels under the icons when they fit, icons only when they do not.
+    def toolbar_mode(self):
+        """Icons, icons with labels, or labels. The person's choice, kept."""
+        mode = self.settings.get("toolbar_labels_mode", settings_mod.DEFAULT_TOOLBAR_LABELS)
+        return (mode if mode in settings_mod.TOOLBAR_LABEL_MODES
+                else settings_mod.DEFAULT_TOOLBAR_LABELS)
 
-        Measured 2026-09-09: at 150 percent the labelled bar is wider than a
-        1920 pixel display, so its last tools were clipped even maximised.
-        The bar is rebuilt only when the answer changes; the accessible
-        names and tooltips are the same either way.
+    def _rebuild_toolbar(self, mode, squeeze):
+        old = getattr(self, "toolbar", None)
+        self.toolbar = toolbar_mod.EditorToolBar(self, self.id_of, mode=mode, squeeze=squeeze)
+        self.SetToolBar(self.toolbar)
+        if old is not None:
+            old.Destroy()
+        self._toolbar_widths[(mode, squeeze)] = self.toolbar.needed_width()
+        self.toolbar.sync(getattr(self, "state", None) or {})
+        self.Layout()
+
+    def _fit_toolbar(self):
+        """The chosen shape, squeezed only if the words will not fit.
+
+        The old rule threw the labels away whenever the bar was wider than
+        the window, so somebody who cannot make out a 20 pixel glyph could
+        not keep the words at all (defect 6 of the round 2 review). Now the
+        choice stands and the squeeze is what gives: the eight tools in
+        toolbar.KEEP_LABEL keep their words and the rest fall back to their
+        icon. The tooltip and the accessible name never change.
         """
         if not self or getattr(self, "toolbar", None) is None:
             return
-        wanted = bool(self.settings.get("toolbar_labels", True))
+        mode = self.toolbar_mode()
         width = self.GetClientSize().width
         if width <= 0:
             return
-        labelled = self._toolbar_widths.get(True)
-        if wanted and labelled is None:
-            labels = True                      # measure the labelled bar first
-        elif wanted and labelled <= width:
-            labels = True
-        else:
-            labels = False
-        if labels == self.toolbar.show_labels:
+        squeeze = 0
+        if mode == "icons_labels":
+            full = self._toolbar_widths.get((mode, 0))
+            if full is not None and full > width:
+                squeeze = 1
+        if (mode, squeeze) == (self.toolbar.mode, self.toolbar.squeeze):
             return
-        old = self.toolbar
-        self.toolbar = toolbar_mod.EditorToolBar(self, self.id_of, show_labels=labels)
-        self.SetToolBar(self.toolbar)
-        old.Destroy()
-        self._toolbar_widths[labels] = self.toolbar.needed_width()
-        self.toolbar.sync(self.state or {})
-        self.Layout()
-        if labels and self._toolbar_widths[True] > width:
-            wx.CallAfter(self._fit_toolbar)
+        self._rebuild_toolbar(mode, squeeze)
+        if squeeze == 0 and self._toolbar_widths.get((mode, 0), 0) > width:
+            wx.CallAfter(self._fit_toolbar)          # now it has been measured
+
+    # --------------------------------------------------------- display --
+    def display_settings(self):
+        return self.settings.display()
+
+    def apply_display(self, speak=""):
+        """Put every screen setting where it belongs, at once.
+
+        The editor page takes the text size, the theme, the caret, the focus
+        ring, the bold body text and the line spacing; the window takes the
+        toolbar labels. None of it reaches an exported PDF, which is always
+        black text on a white page.
+        """
+        if not self:
+            return
+        self.editor.set_display(self.display_settings())
+        self._fit_toolbar()
+        self._sync_view_menu()
+        if speak:
+            self.announce(speak)
+
+    def _set_toolbar_mode(self, mode):
+        self.settings["toolbar_labels_mode"] = mode
+        self.settings["toolbar_labels"] = mode != "icons"
+        self.settings.save()
+        self._fit_toolbar()
+        self._sync_view_menu()
+        index = settings_mod.TOOLBAR_LABEL_MODES.index(mode)
+        self.announce(S["toolbar_labels_set"]
+                      % settings_mod.TOOLBAR_LABEL_LABELS[index].lower())
+
+    def on_toolbar_icons(self, _event=None):
+        self._set_toolbar_mode("icons")
+
+    def on_toolbar_icons_labels(self, _event=None):
+        self._set_toolbar_mode("icons_labels")
+
+    def on_toolbar_labels(self, _event=None):
+        self._set_toolbar_mode("labels")
+
+    def on_display_options(self, _event=None):
+        """View, Display options: Preferences with the Display page open."""
+        self.on_preferences(page="Display")
+
+    def _sync_view_menu(self):
+        """The toolbar radio items say which shape the bar is in."""
+        mode = self.toolbar_mode()
+        for action, name in (("toolbar_icons", "icons"),
+                             ("toolbar_icons_labels", "icons_labels"),
+                             ("toolbar_labels", "labels")):
+            for item in self._menu_items.get(action, []):
+                try:
+                    item.Check(name == mode)
+                except Exception:
+                    pass
 
     def _build_menus(self):
         bar = wx.MenuBar()
@@ -315,8 +417,10 @@ class MainFrame(wx.Frame):
             bar.Append(self._make_menu(items), title)
         self.SetMenuBar(bar)
 
-    def _make_menu(self, items, remember=True):
+    def _make_menu(self, items, remember=True, collect=False, into=None):
+        """The menu, and when `collect` is set the (action, item) pairs in it."""
         menu = wx.Menu()
+        made_here = [] if into is None else into
         for item in items:
             if item == "-":
                 menu.AppendSeparator()
@@ -325,14 +429,32 @@ class MainFrame(wx.Frame):
                 self._fill_recent()
                 menu.AppendSubMenu(self.recent_menu, "&Recent documents")
             elif isinstance(item, tuple):
-                menu.AppendSubMenu(self._make_menu(item[1], remember), item[0])
+                menu.AppendSubMenu(self._make_menu(item[1], remember, into=made_here), item[0])
             else:
                 entry = keymap.entry(item)
                 kind = {"check": wx.ITEM_CHECK, "radio": wx.ITEM_RADIO}.get(entry.kind, wx.ITEM_NORMAL)
                 made = menu.Append(self.id_of(item), keymap.menu_label(entry), entry.help, kind)
+                made_here.append((item, made))
                 if remember:
                     self._menu_items.setdefault(item, []).append(made)
-        return menu
+        return (menu, made_here) if collect else menu
+
+    def _check_items(self, made, state):
+        """Set the check and radio items in a menu built without remembering."""
+        block = state.get("block") or "p"
+        if state.get("quote") and block == "p":
+            block = "blockquote"
+        style = {"p": "normal", "h1": "heading1", "h2": "heading2", "h3": "heading3",
+                 "h4": "heading4", "h5": "heading5", "h6": "heading6", "ul": "bullets",
+                 "ol": "numbers", "blockquote": "quote"}.get(block)
+        align = "align_" + (state.get("align") or "left")
+        for action, item in made:
+            if not item.IsCheckable():
+                continue
+            if action in ("bold", "italic", "underline", "strike", "code"):
+                item.Check(bool(state.get(action)))
+            elif action == style or action == align:
+                item.Check(True)
 
     def _fill_recent(self):
         for item in list(self.recent_menu.GetMenuItems()):
@@ -378,6 +500,8 @@ class MainFrame(wx.Frame):
             handler(event)
 
     def _dispatch(self, event):
+        if getattr(self, "_pumping", False):
+            return                      # a save prompt is pumping the loop
         action = self._action_of.get(event.GetId())
         if action:
             self.perform(action, event)
@@ -564,11 +688,20 @@ class MainFrame(wx.Frame):
             path = self._ask_save_path()
             if not path:
                 return False
-        self._save_to(path, native=True, done=lambda ok: outcome.setdefault("ok", ok))
-        deadline = time.monotonic() + 60
-        while "ok" not in outcome and time.monotonic() < deadline:
-            wx.Yield()
-            wx.MilliSleep(10)
+        # wx.Yield() runs every pending event, so while this pumps, the
+        # autosave timer, a document handed over by a second launch and any
+        # menu event could all run inside the save prompt. _pumping says so
+        # and _on_autosave_tick, _open_with_prompt and _dispatch respect it
+        # (defect 15 of the round 2 review).
+        self._pumping = True
+        try:
+            self._save_to(path, native=True, done=lambda ok: outcome.setdefault("ok", ok))
+            deadline = time.monotonic() + 60
+            while "ok" not in outcome and time.monotonic() < deadline:
+                wx.Yield()
+                wx.MilliSleep(10)
+        finally:
+            self._pumping = False
         return bool(outcome.get("ok"))
 
     # -------------------------------------------------------- messages --
@@ -679,7 +812,14 @@ class MainFrame(wx.Frame):
             else:
                 self.announce_help(S[action])
         elif action in ("zoom_in", "zoom_out", "zoom_reset"):
-            self.announce_help(S["zoom"] % int(result.get("percent") or 100))
+            # The page has already changed the size; the setting follows it,
+            # so Ctrl+equals is remembered for the next run rather than
+            # lasting until the window closes.
+            percent = int(result.get("percent") or settings_mod.DEFAULT_ZOOM)
+            self.settings["editor_zoom"] = percent
+            self.editor.set_zoom(percent)
+            self.settings.save()
+            self.announce(S["zoom"] % percent)
         elif action in ("next_heading", "previous_heading"):
             if result.get("found"):
                 self.announce(S["heading_at"] % (int(result.get("level") or 0),
@@ -696,7 +836,12 @@ class MainFrame(wx.Frame):
 
     # ---------------------------------------------------- context menu --
     def _popup_context_menu(self, x, y):
-        menu = self._make_menu(keymap.CONTEXT_MENU, remember=False)
+        # remember=False keeps these throwaway items out of _menu_items, so
+        # the check and radio items have to be set here from the state the
+        # page last reported; without this the menu said Bold unchecked on
+        # bold text (defect 13 of the round 2 review).
+        menu, made = self._make_menu(keymap.CONTEXT_MENU, remember=False, collect=True)
+        self._check_items(made, self.state or {})
         figure = (self.state or {}).get("figure")
         if figure:
             menu.AppendSeparator()
@@ -711,9 +856,26 @@ class MainFrame(wx.Frame):
         menu.Destroy()
         self.editor.focus()
 
-    def on_context_menu(self, _event=None):
-        """The wx side of the Applications key, for focus outside the editor."""
-        self._popup_context_menu(20, 20)
+    def on_context_menu(self, event=None):
+        """The wx side of the Applications key and Shift+F10.
+
+        Bound to EVT_CONTEXT_MENU on the frame and on the toolbar as well as
+        being an action, because a native keymap entry is left out of the wx
+        accelerator table, so with focus on the toolbar nothing answered the
+        Applications key at all (defect 14 of the round 2 review).
+        """
+        point = None
+        try:
+            if event is not None and hasattr(event, "GetPosition"):
+                point = event.GetPosition()
+        except Exception:
+            point = None
+        menu, made = self._make_menu(keymap.CONTEXT_MENU, remember=False, collect=True)
+        self._check_items(made, self.state or {})
+        where = self.ScreenToClient(point) if point and point != wx.DefaultPosition \
+            else wx.Point(20, 20)
+        self.PopupMenu(menu, where)
+        menu.Destroy()
 
     def _open_menu_bar(self, key):
         """Alt, F10 or Alt+letter from inside the editor.
@@ -747,7 +909,25 @@ class MainFrame(wx.Frame):
     def _paste_content(self, html, text):
         if not html and text:
             html = text_to_html(text)
-        warnings = self.editor.insert_html(html)
+        if len(html) > PASTE_ON_THREAD_CHARS:
+            # Fifty pages of Word measured 99 milliseconds in the sanitiser,
+            # which is a visible stall, so a paste that size is cleaned off
+            # the UI thread and inserted in the callback (defect 16).
+            def work():
+                clean, warnings = sanitise(html)
+                wx.CallAfter(self._pasted_clean, clean, warnings)
+
+            threading.Thread(target=work, daemon=True, name="tgimprint-paste").start()
+            return
+        self._paste_done(self.editor.insert_html(html))
+
+    def _pasted_clean(self, clean, warnings):
+        if not self:
+            return
+        self.editor.call("insertHTML", clean)
+        self._paste_done(warnings)
+
+    def _paste_done(self, warnings):
         self.mark_modified()
         if warnings:
             self.announce(S["pasted_with_notes"] % warnings[0])
@@ -850,7 +1030,7 @@ class MainFrame(wx.Frame):
     def on_open(self, _event=None):
         if not self._confirm_discard():
             return
-        with wx.FileDialog(self, "Open a document", defaultDir=self.last_folder or paths.documents_dir(),
+        with wx.FileDialog(self, TITLES["open"], defaultDir=self.last_folder or paths.documents_dir(),
                            wildcard=C.OPEN_WILDCARD,
                            style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as dialog:
             if dialog.ShowModal() != wx.ID_OK:
@@ -864,6 +1044,9 @@ class MainFrame(wx.Frame):
 
     def _open_with_prompt(self, path):
         if not self:
+            return
+        if getattr(self, "_pumping", False):
+            wx.CallLater(200, self._open_with_prompt, path)
             return
         self.Raise()
         if not self._confirm_discard():
@@ -898,7 +1081,7 @@ class MainFrame(wx.Frame):
             busy.finish()
         message = S["open_failed"] % (os.path.basename(path), exc)
         self.announce(message)
-        dialogs.show_text(self, "Could not open", message)
+        dialogs.show_text(self, TITLES["could_not_open"], message)
         self.editor.focus()
 
     def _loaded(self, path, kind, clean, meta, warnings, busy):
@@ -937,7 +1120,7 @@ class MainFrame(wx.Frame):
         if needing:
             plural = "" if needing == 1 else "s"
             self.announce(S["pictures_need_alt"] % (needing, plural, "s" if needing == 1 else ""))
-            if dialogs.ask(self, "Pictures without descriptions",
+            if dialogs.ask(self, TITLES["pictures_missing"],
                            S["pictures_offer"] % (needing, plural, "s" if needing == 1 else "ve"),
                            yes="&Open the Pictures list", no="&Not now"):
                 self.on_pictures()
@@ -951,7 +1134,7 @@ class MainFrame(wx.Frame):
         else:
             name = safe_filename(self.meta.get("title") or S["untitled"])
         ext = ".html" if web else C.DOC_EXTENSION
-        with wx.FileDialog(self, "Save as web page" if web else "Save as",
+        with wx.FileDialog(self, TITLES["save_as_web"] if web else TITLES["save_as"],
                            defaultDir=self.last_folder or paths.documents_dir(),
                            defaultFile=name + ext,
                            wildcard=C.WEB_PAGE_WILDCARD if web else C.DOC_WILDCARD,
@@ -1046,7 +1229,7 @@ class MainFrame(wx.Frame):
 
     def _export_after_title(self):
         default = safe_filename(self.meta.get("title") or self.document_name()) + ".pdf"
-        with wx.FileDialog(self, "Export PDF", defaultDir=self.last_folder or paths.documents_dir(),
+        with wx.FileDialog(self, TITLES["export"], defaultDir=self.last_folder or paths.documents_dir(),
                            defaultFile=default, wildcard=C.PDF_WILDCARD,
                            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as dialog:
             if dialog.ShowModal() != wx.ID_OK:
@@ -1076,14 +1259,18 @@ class MainFrame(wx.Frame):
             def work():
                 try:
                     result = pdfexport.export_html(body, out, meta, progress=busy.step)
-                    report = ""
-                    try:
-                        from .. import pdfcheck
-                        report = pdfcheck.check(out).format_report()
-                    except ImportError:
-                        report = S["check_module_missing"]
-                    except Exception as exc:
-                        report = S["check_failed"] % exc
+                    # The export already checked the file it wrote and hands
+                    # the Report back on the result, so checking again here
+                    # ran every check twice (defect 9 of the round 2 review).
+                    report = getattr(result, "report", None)
+                    if report is None:
+                        try:
+                            from .. import pdfcheck
+                            report = pdfcheck.check(out)
+                        except ImportError:
+                            report = S["check_module_missing"]
+                        except Exception as exc:
+                            report = S["check_failed"] % exc
                     wx.CallAfter(finished, out, result, report, None, busy)
                 except Exception as exc:
                     wx.CallAfter(finished, out, None, "", exc, busy)
@@ -1101,7 +1288,7 @@ class MainFrame(wx.Frame):
             else:
                 message = S["export_failed"] % error
             self.announce(message)
-            dialogs.show_text(self, "The PDF could not be made", message)
+            dialogs.show_text(self, TITLES["could_not_export"], message)
             self.editor.focus()
             return
         lines = []
@@ -1110,7 +1297,19 @@ class MainFrame(wx.Frame):
         if claimed:
             lines.append(S["pdfua_claimed"])
         else:
-            named = next((w for w in warnings if "PDF/UA" in w), "")
+            # The name of the check that stopped the claim comes from the
+            # checker's own report, not from hunting for the letters PDF/UA
+            # in the warnings (defect 9 of the round 2 review).
+            named = ""
+            failed = []
+            try:
+                failed = list(report.failed_names() or [])
+            except Exception:
+                failed = []
+            if failed:
+                named = "The check that stopped it: %s." % ", ".join(failed)
+            else:
+                named = next((w for w in warnings if "PDF/UA" in w), "")
             lines.append(S["pdfua_not_claimed"] % (named or ""))
         pages = getattr(result, "pages", None)
         engine = getattr(result, "engine", "")
@@ -1120,7 +1319,10 @@ class MainFrame(wx.Frame):
             lines.append("")
             lines.extend(warnings)
         lines.append("")
-        lines.append(report or "")
+        try:
+            lines.append(report.format_report())
+        except AttributeError:
+            lines.append(str(report or ""))
         text = "\n".join(lines)
         self.announce(S["export_done"] % os.path.basename(out))
         dialog = dialogs.TextDialog(self, S["export_report_title"], text,
@@ -1151,7 +1353,7 @@ class MainFrame(wx.Frame):
         if error is not None:
             message = S["export_failed"] % error
             self.announce(message)
-            dialogs.show_text(self, "The PDF could not be made", message)
+            dialogs.show_text(self, TITLES["could_not_export"], message)
             return
         self.announce_help(S["printing"])
         try:
@@ -1167,7 +1369,7 @@ class MainFrame(wx.Frame):
         except ImportError:
             self.announce(S["check_module_missing"])
             return
-        with wx.FileDialog(self, "Check a PDF", defaultDir=self.last_folder or paths.documents_dir(),
+        with wx.FileDialog(self, TITLES["check"], defaultDir=self.last_folder or paths.documents_dir(),
                            wildcard=C.PDF_WILDCARD, style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as dialog:
             if dialog.ShowModal() != wx.ID_OK:
                 return
@@ -1230,20 +1432,38 @@ class MainFrame(wx.Frame):
         self.meta["title"] = title
         self.mark_modified()
         self._update_title()
-        self.announce_help(S["title_set"] % (title or S["untitled"]))
+        self.announce_help(S["title_set"] % title if title else S["title_cleared"])
         self.editor.focus()
 
-    def on_preferences(self, _event=None):
+    def on_preferences(self, _event=None, page=None):
+        """Preferences. `page` names the tab to open on, "Display" from View.
+
+        The Display page changes the screen while the dialog is open, so
+        somebody who cannot read the current size can see the new one before
+        committing. Cancel puts back what was there.
+        """
         from .preferences_dialog import PreferencesDialog
-        dialog = PreferencesDialog(self, self, self.settings)
+        before = {key: self.settings.get(key) for key in settings_mod.DISPLAY_KEYS}
+        dialog = PreferencesDialog(self, self, self.settings, page=page)
         try:
             if dialog.ShowModal() == wx.ID_OK:
                 self.settings.save()
                 for key in ("font_family", "font_points"):
                     self.meta[key] = self.settings.get(key)
                 self._apply_meta_to_page()
+                self.apply_display()
+            else:
+                self.settings.update(before)
+                self.apply_display()
         finally:
             dialog.Destroy()
+        self.editor.focus()
+
+    def on_fill_form(self, _event=None):
+        """Tools, Fill in a PDF form (Ctrl+Shift+F). The whole flow is in
+        forms_dialog, which imports Worker A's pdfforms lazily."""
+        from . import forms_dialog
+        forms_dialog.fill_in_a_pdf_form(self)
         self.editor.focus()
 
     # ---------------------------------------------------------- insert --
@@ -1304,7 +1524,7 @@ class MainFrame(wx.Frame):
     def _edit_figure(self, index, spec):
         from .image_dialog import PictureDialog
         dialog = PictureDialog(self, self, spec=spec, imported=bool(self.imported_from),
-                               context=self._context_for(index))
+                               context=self._context_for(index, spec))
         try:
             if dialog.ShowModal() == wx.ID_OK and dialog.result:
                 self.editor.call("updateFigure", index, dialog.result)
@@ -1314,17 +1534,38 @@ class MainFrame(wx.Frame):
             dialog.Destroy()
         self.editor.focus()
 
-    def _context_for(self, index):
-        return (self.meta.get("title") or "")
+    def _context_for(self, index, spec=None):
+        """What the describer is told about where the picture sits.
+
+        The document title alone is not context (defect 18 of the round 2
+        review). The caption, the heading above the picture and the text of
+        the block in front of it are what make a description specific; the
+        page reports all three with the figure.
+        """
+        spec = spec or {}
+        parts = []
+        title = (self.meta.get("title") or "").strip()
+        if title:
+            parts.append("Document title: %s" % title)
+        heading = (spec.get("heading") or "").strip()
+        if heading:
+            parts.append("Under the heading: %s" % heading)
+        caption = (spec.get("caption") or "").strip()
+        if caption:
+            parts.append("Caption: %s" % caption)
+        before = (spec.get("before") or "").strip()
+        if before:
+            parts.append("The text before the picture: %s" % before)
+        return "\n".join(parts)
 
     def _confirm_remove(self, kind, index):
         if kind == "figure":
             figure = (self.state or {}).get("figure") or {}
             question = S["remove_picture_q"] % (figure.get("alt") or "none")
-            title = "Remove picture"
+            title = TITLES["remove_picture"]
         elif kind == "table":
             question = S["remove_table_q"]
-            title = "Remove table"
+            title = TITLES["remove_table"]
         else:
             self.announce(S["no_object_here"])
             return
@@ -1370,7 +1611,7 @@ class MainFrame(wx.Frame):
         from .image_dialog import data_uri_bytes
         raw = data_uri_bytes(spec.get("src", ""))
         dialog = DescribeImageDialog(self, raw, current_alt=spec.get("alt", ""),
-                                     context=self._context_for(index),
+                                     context=self._context_for(index, spec),
                                      imported=bool(self.imported_from),
                                      provider=self.settings.get("ai_provider") or "",
                                      model=self.settings.get("ai_model") or "")
@@ -1587,7 +1828,11 @@ class MainFrame(wx.Frame):
             self._offer_update(info)
             return
         problem = ""
-        if message and "newest" not in message.lower():
+        # Not a substring of a sentence: the up to date sentence is the one
+        # in S, and anything else is a real problem (defect 11 of the round 2
+        # review). appupdate should hand back a status of its own; noted for
+        # the coordinator.
+        if message and message.strip() != S["newest_version"]:
             problem = message
         self.announce_help(message or S["newest_version"])
         updatedialog.ask_about_update(self, C.APP_NAME, C.APP_VERSION, problem=problem)
@@ -1700,7 +1945,7 @@ class MainFrame(wx.Frame):
 
     # ------------------------------------------------- autosave, crash --
     def _on_autosave_tick(self, _event):
-        if not self.modified or self._closing:
+        if not self.modified or self._closing or getattr(self, "_pumping", False):
             return
         self.editor.get_body(self._snapshot_body)
 
@@ -1784,12 +2029,34 @@ class MainFrame(wx.Frame):
         self.editor.focus()
 
     def _recover(self, snapshot, source, title):
-        try:
-            body, meta, warnings = read_document(snapshot, "native")
-        except Exception as exc:
-            self.announce(S["open_failed"] % (title or "the recovered document", exc))
+        """Read the snapshot on a thread, like every other open.
+
+        It used to read and sanitise on the UI thread, which froze the window
+        during the one moment somebody most wants an answer (defect 7 of the
+        round 2 review).
+        """
+        self.announce_help(S["opening"] % (title or os.path.basename(snapshot)))
+
+        def work():
+            try:
+                body, meta, warnings = read_document(snapshot, "native")
+                clean, more = sanitise(body)
+                wx.CallAfter(self._recovered, snapshot, source, title, clean, meta,
+                             list(warnings or []) + list(more or []))
+            except Exception as exc:
+                wx.CallAfter(self._recover_failed, title, exc)
+
+        threading.Thread(target=work, daemon=True, name="tgimprint-recover").start()
+
+    def _recover_failed(self, title, exc):
+        if not self:
             return
-        clean, more = sanitise(body)
+        self.announce(S["open_failed"] % (title or "the recovered document", exc))
+        self.editor.focus()
+
+    def _recovered(self, snapshot, source, title, clean, meta, warnings):
+        if not self:
+            return
         self.meta = self._new_meta()
         for key in ("title", "author", "lang", "subject", "page_size", "margin_inches"):
             if (meta or {}).get(key) not in (None, ""):
@@ -1807,18 +2074,28 @@ class MainFrame(wx.Frame):
         self._update_title()
         self.editor.load_clean_body(clean)
         self.announce(S["recovered"] % (title or self.document_name()))
+        if warnings:
+            dialogs.show_text(self, S["open_notes_title"], "\n".join(warnings),
+                              field_label="&Notes")
 
     # ----------------------------------------------------------- close --
     def _on_close(self, event):
-        if event.CanVeto() and not self._confirm_discard():
-            event.Veto()
-            return
+        asked = False
+        if event.CanVeto():
+            if not self._confirm_discard():
+                event.Veto()
+                return
+            asked = True
         self._closing = True
         try:
             self._autosave.Stop()
         except Exception:
             pass
-        self._discard_snapshot()
+        # A forced close, Windows ending the session among them, cannot be
+        # vetoed and asks nothing, so the snapshot is the only copy of the
+        # unsaved work: it stays (defect 8 of the round 2 review).
+        if asked or not self.modified:
+            self._discard_snapshot()
         self._save_geometry()
         self.settings["last_folder"] = self.last_folder
         self.settings.save()

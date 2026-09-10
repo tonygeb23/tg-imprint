@@ -25,6 +25,7 @@ import json
 import secrets
 
 from . import constants as C
+from . import settings as settings_mod
 
 #: Widths of the page, in CSS units, for the paper on screen.
 PAGE_DIMENSIONS = {
@@ -34,19 +35,67 @@ PAGE_DIMENSIONS = {
 }
 
 _CSS = """
-html, body { margin: 0; padding: 0; background: #e3e6eb; color-scheme: light; }
-body { font-family: %(font)s; font-size: %(px)spx; line-height: 1.5; }
+/* Every colour, the caret, the focus ring, the weight and the line spacing
+   are custom properties, so the Display page changes them by writing one
+   variable on the html element and never touches the text. The exported PDF
+   is built from the body HTML alone, so no screen theme can reach it;
+   tests/test_display.py proves that. */
+:root {
+  --surround: #e3e6eb; --paper: #ffffff; --ink: #111111; --muted: #444444;
+  --rule: #8f96a3; --soft: #c8ccd4; --panel: #f1f3f6; --panel-ink: #111111;
+  --link: #0b4fb8; --focus: #2b6fd6; --sel: #b9d3ff; --sel-ink: #111111;
+  --caret: #000000; --caret-width: 2px; --focus-width: 3px;
+  --body-weight: normal; --line-height: 1.5;
+  --shadow: 0 1px 2px rgba(0,0,0,0.20), 0 6px 20px rgba(0,0,0,0.12);
+  color-scheme: light;
+}
+html[data-theme="dark"] {
+  --surround: #16181c; --paper: #1e2126; --ink: #eef1f6; --muted: #c3c9d4;
+  --rule: #6f7783; --soft: #3a4049; --panel: #2a2e35; --panel-ink: #eef1f6;
+  --link: #86b8ff; --focus: #7ab4ff; --sel: #2f5c9e; --sel-ink: #ffffff;
+  --caret: #ffffff; --shadow: none;
+  color-scheme: dark;
+}
+html[data-theme="yellow_on_black"] {
+  --surround: #000000; --paper: #000000; --ink: #ffff00; --muted: #ffff00;
+  --rule: #ffff00; --soft: #ffff00; --panel: #000000; --panel-ink: #ffff00;
+  --link: #66d9ff; --focus: #ffff00; --sel: #ffff00; --sel-ink: #000000;
+  --caret: #ffff00; --shadow: none;
+  color-scheme: dark;
+}
+/* Follow Windows: the system colour keywords, and the light or dark the
+   system asks for. When Windows really is in a high contrast mode every
+   theme collapses to the forced-colors block at the foot of this sheet. */
+html[data-theme="high_contrast"] {
+  --surround: Canvas; --paper: Canvas; --ink: CanvasText; --muted: CanvasText;
+  --rule: CanvasText; --soft: CanvasText; --panel: Canvas; --panel-ink: CanvasText;
+  --link: LinkText; --focus: Highlight; --sel: Highlight; --sel-ink: HighlightText;
+  --caret: CanvasText; --shadow: none;
+  color-scheme: light dark;
+}
+html, body { margin: 0; padding: 0; background: var(--surround); }
+body { font-family: %(font)s; font-size: %(px)spx; line-height: var(--line-height); }
 #editor {
   box-sizing: border-box;
-  background: #ffffff; color: #111111;
+  background: var(--paper); color: var(--ink); font-weight: var(--body-weight);
   width: %(width)s; max-width: calc(100vw - 32px); min-height: %(height)s;
   margin: 16px auto 32px auto; padding: %(margin)s;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.20), 0 6px 20px rgba(0,0,0,0.12);
-  border: 1px solid #c8ccd4; border-radius: 2px;
-  outline: none; caret-color: #000000;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--soft); border-radius: 2px;
+  outline: none; caret-color: var(--caret);
   overflow-wrap: break-word;
 }
-#editor:focus { box-shadow: 0 0 0 3px #2b6fd6, 0 6px 20px rgba(0,0,0,0.12); border-color: #2b6fd6; }
+#editor:focus { box-shadow: 0 0 0 var(--focus-width) var(--focus), var(--shadow);
+  border-color: var(--focus); }
+/* The caret the Display page can widen. The browser draws a one pixel bar,
+   which disappears against a large font; this one is a box of the asked for
+   width, sitting over the native caret, which is hidden only while it runs.
+   It is outside #editor, so it is not part of the document. */
+#tgcaret { position: fixed; display: none; background: var(--caret);
+  width: 2px; pointer-events: none; z-index: 5;
+  animation: tgblink 1.06s steps(1) infinite; }
+html[data-fatcaret="1"] #editor { caret-color: transparent; }
+@keyframes tgblink { 0%%, 49%% { opacity: 1; } 50%%, 100%% { opacity: 0; } }
 #editor h1 { font-size: 2.0em; margin: 0.8em 0 0.35em; line-height: 1.2; }
 #editor h2 { font-size: 1.6em; margin: 0.8em 0 0.35em; line-height: 1.25; }
 #editor h3 { font-size: 1.3em; margin: 0.8em 0 0.3em; line-height: 1.3; }
@@ -56,17 +105,17 @@ body { font-family: %(font)s; font-size: %(px)spx; line-height: 1.5; }
 #editor p { margin: 0 0 0.7em; }
 #editor ul, #editor ol { margin: 0 0 0.7em; padding-left: 2.2em; }
 #editor li { margin: 0 0 0.2em; }
-#editor a { color: #0b4fb8; text-decoration: underline; }
+#editor a { color: var(--link); text-decoration: underline; }
 #editor blockquote { margin: 0.6em 0 0.8em 1.6em; padding: 0.1em 0 0.1em 1em;
-  border-left: 4px solid #b9c0cc; color: #333333; }
+  border-left: 4px solid var(--rule); color: var(--muted); }
 #editor blockquote p:last-child { margin-bottom: 0; }
 #editor code { font-family: Consolas, "Courier New", monospace; font-size: 0.95em;
-  background: #f1f3f6; padding: 0 0.2em; border-radius: 2px; }
+  background: var(--panel); color: var(--panel-ink); padding: 0 0.2em; border-radius: 2px; }
 #editor p.code-block { font-family: Consolas, "Courier New", monospace; white-space: pre-wrap;
-  background: #f1f3f6; padding: 0.5em 0.7em; }
+  background: var(--panel); color: var(--panel-ink); padding: 0.5em 0.7em; }
 #editor figure { display: block; margin: 0.8em 0; padding: 0; max-width: 100%%; }
 #editor figure img { display: block; width: 100%%; height: auto; }
-#editor figcaption { font-size: 0.9em; color: #444444; margin-top: 0.35em; }
+#editor figcaption { font-size: 0.9em; color: var(--muted); margin-top: 0.35em; }
 #editor figure.width-quarter { width: 25%%; }
 #editor figure.width-half { width: 50%%; }
 #editor figure.width-three-quarters { width: 75%%; }
@@ -74,27 +123,30 @@ body { font-family: %(font)s; font-size: %(px)spx; line-height: 1.5; }
 #editor figure.place-left { margin-right: auto; }
 #editor figure.place-centre { margin-left: auto; margin-right: auto; }
 #editor figure.place-right { margin-left: auto; }
-#editor figure.imprint-here { outline: 2px dashed #2b6fd6; outline-offset: 3px; }
+#editor figure.imprint-here { outline: var(--focus-width) dashed var(--focus); outline-offset: 3px; }
 #editor table { border-collapse: collapse; margin: 0.6em 0 0.9em; width: 100%%; }
-#editor th, #editor td { border: 1px solid #8f96a3; padding: 0.3em 0.5em; text-align: left;
+#editor th, #editor td { border: 1px solid var(--rule); padding: 0.3em 0.5em; text-align: left;
   vertical-align: top; min-width: 2em; }
-#editor th { background: #eef0f4; font-weight: bold; }
+#editor th { background: var(--panel); color: var(--panel-ink); font-weight: bold; }
 #editor .align-left { text-align: left; }
 #editor .align-center { text-align: center; }
 #editor .align-right { text-align: right; }
 #editor .align-justify { text-align: justify; }
-#editor hr { border: 0; border-top: 1px solid #8f96a3; margin: 1em 0; }
-::selection { background: #b9d3ff; }
+#editor hr { border: 0; border-top: 1px solid var(--rule); margin: 1em 0; }
+::selection { background: var(--sel); color: var(--sel-ink); }
+/* Windows high contrast wins over every theme, and nothing here fights it:
+   the variables are remapped to the system colours, so the page is drawn in
+   the colours the person chose in Windows whatever the Display page says. */
 @media (forced-colors: active) {
-  html, body { background: Canvas; }
-  #editor { background: Canvas; color: CanvasText; border: 1px solid CanvasText; box-shadow: none; }
-  #editor:focus { outline: 3px solid Highlight; outline-offset: 2px; box-shadow: none; }
-  #editor a { color: LinkText; }
-  #editor blockquote { border-left-color: CanvasText; color: CanvasText; }
-  #editor code, #editor p.code-block, #editor th { background: Canvas; color: CanvasText; }
-  #editor th, #editor td, #editor hr { border-color: CanvasText; }
-  #editor figcaption { color: CanvasText; }
-  #editor figure.imprint-here { outline-color: Highlight; }
+  :root, html[data-theme] {
+    --surround: Canvas; --paper: Canvas; --ink: CanvasText; --muted: CanvasText;
+    --rule: CanvasText; --soft: CanvasText; --panel: Canvas; --panel-ink: CanvasText;
+    --link: LinkText; --focus: Highlight; --sel: Highlight; --sel-ink: HighlightText;
+    --caret: CanvasText; --shadow: none;
+  }
+  #editor { forced-color-adjust: auto; box-shadow: none; }
+  #editor:focus { outline: var(--focus-width) solid Highlight; outline-offset: 2px; box-shadow: none; }
+  #tgcaret { background: CanvasText; }
 }
 """
 
@@ -105,8 +157,9 @@ _JS = r"""
   var BIND = __BINDINGS__;
   var DENY = __DENY__;
   var BLOCKS = /^(H[1-6]|P|LI|BLOCKQUOTE|FIGURE|FIGCAPTION|TD|TH|PRE|DIV)$/;
-  var ZOOMS = [0.7, 0.85, 1, 1.15, 1.3, 1.5, 1.75, 2, 2.5, 3];
-  var zoomIndex = 2;
+  var ZOOMS = __ZOOMS__;                 // whole percentages, from settings.py
+  var SPACING = __SPACING__;
+  var display = __DISPLAY__;             // what the settings file says
 
   function post(obj) {
     var text = JSON.stringify(obj);
@@ -187,7 +240,9 @@ _JS = r"""
       post({ type: 'menu', key: c.slice(-1) });
       return;
     }
-    if (c === 'f10' || c === 'shift+f10' && false) {
+    // Shift+F10 is not here: it arrives as a contextmenu event, which the
+    // handler above forwards, and the keymap entry for it is native.
+    if (c === 'f10') {
       e.preventDefault(); e.stopPropagation();
       post({ type: 'menu', key: '' });
       return;
@@ -269,9 +324,32 @@ _JS = r"""
     var decorative = !!img && img.hasAttribute('alt') && alt === '' && !img.hasAttribute('data-needs-alt');
     return { index: figures().indexOf(fig), alt: alt, decorative: decorative,
       caption: cap ? cap.textContent : '', width: width, place: place,
+      before: textBefore(fig), heading: headingBefore(fig),
       altSource: img ? (img.getAttribute('data-alt-source') || '') : '',
       needsAlt: !!img && (img.hasAttribute('data-needs-alt') || (!img.hasAttribute('alt'))),
       src: img ? (img.getAttribute('src') || '') : '' };
+  }
+
+  // The block in front of a figure, and the heading it sits under: the
+  // context a describer needs. Both are read from the document, never
+  // written to it.
+  function textBefore(node) {
+    var n = node && node.previousElementSibling;
+    while (n) {
+      var text = (n.textContent || '').trim();
+      if (text) { return text.slice(-400); }
+      n = n.previousElementSibling;
+    }
+    return '';
+  }
+
+  function headingBefore(node) {
+    var n = node;
+    while (n) {
+      if (n.tagName && /^H[1-6]$/.test(n.tagName)) { return (n.textContent || '').trim(); }
+      n = n.previousElementSibling;
+    }
+    return '';
   }
 
   // Only a figure with the caret inside it counts as "at the caret". The
@@ -675,10 +753,108 @@ _JS = r"""
     return { found: true, level: +target.tagName[1], text: target.textContent.trim() };
   }
 
+  // ------------------------------------------------- the screen settings --
+  // Everything here writes a custom property on the html element or the
+  // caret box outside the editor. Not one of them touches the text, so the
+  // exported PDF, which is built from the body HTML alone, is always black
+  // on white at the page size Document properties says.
+  function applyZoom() {
+    document.body.style.zoom = display.zoom / 100;
+    layCaret();
+    return { percent: display.zoom };
+  }
+
+  function setZoom(percent) {
+    percent = Math.max(70, Math.min(300, Math.round(percent || 100)));
+    display.zoom = percent;
+    return applyZoom();
+  }
+
   function zoom(delta) {
-    if (delta === 0) { zoomIndex = 2; } else { zoomIndex = Math.max(0, Math.min(ZOOMS.length - 1, zoomIndex + delta)); }
-    document.body.style.zoom = ZOOMS[zoomIndex];
-    return { percent: Math.round(ZOOMS[zoomIndex] * 100) };
+    // The keys step through the list; the Display page takes any number in
+    // the range, so a person sitting at 210 steps to 250 and to 200.
+    if (!delta) { return setZoom(100); }
+    var i, next = display.zoom;
+    if (delta > 0) {
+      next = ZOOMS[ZOOMS.length - 1];
+      for (i = 0; i < ZOOMS.length; i++) { if (ZOOMS[i] > display.zoom) { next = ZOOMS[i]; break; } }
+    } else {
+      next = ZOOMS[0];
+      for (i = ZOOMS.length - 1; i >= 0; i--) { if (ZOOMS[i] < display.zoom) { next = ZOOMS[i]; break; } }
+    }
+    return setZoom(next);
+  }
+
+  // The caret box. The browser's own caret is one CSS pixel wide, which is
+  // gone against a large font, and there is no property that widens it, so
+  // a box of the asked for width is drawn over the collapsed selection and
+  // the native caret is hidden. At the default of two pixels none of this
+  // runs and the native caret is the one you see.
+  var caretBox = null, caretTimer = 0;
+
+  function caretElement() {
+    if (!caretBox) {
+      caretBox = document.createElement('div');
+      caretBox.id = 'tgcaret';
+      caretBox.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(caretBox);
+    }
+    return caretBox;
+  }
+
+  function fatCaret() { return (display.caret || 2) > 2; }
+
+  function layCaret() {
+    if (!fatCaret()) {
+      if (caretBox) { caretBox.style.display = 'none'; }
+      document.documentElement.removeAttribute('data-fatcaret');
+      return;
+    }
+    document.documentElement.setAttribute('data-fatcaret', '1');
+    var box = caretElement();
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed || !ed.contains(sel.anchorNode)
+        || document.activeElement !== ed) {
+      box.style.display = 'none';
+      return;
+    }
+    var r = sel.getRangeAt(0);
+    var rect = r.getClientRects()[0] || r.getBoundingClientRect();
+    if (!rect || (!rect.height && !rect.top)) {
+      // An empty paragraph gives a collapsed range no rectangle of its own.
+      var b = blockOf(sel.anchorNode) || ed;
+      var br = b.getBoundingClientRect();
+      var pad = parseFloat(window.getComputedStyle(b).paddingLeft) || 0;
+      rect = { left: br.left + pad, top: br.top, height: br.height || 20 };
+    }
+    box.style.width = display.caret + 'px';
+    box.style.height = Math.max(12, Math.round(rect.height)) + 'px';
+    box.style.left = Math.round(rect.left) + 'px';
+    box.style.top = Math.round(rect.top) + 'px';
+    box.style.display = 'block';
+  }
+
+  function scheduleCaret() {
+    if (!fatCaret()) { return; }
+    if (caretTimer) { return; }
+    caretTimer = setTimeout(function () { caretTimer = 0; layCaret(); }, 16);
+  }
+
+  function setDisplay(d) {
+    d = d || {};
+    var root = document.documentElement;
+    ['zoom', 'theme', 'caret', 'focus', 'bold', 'spacing'].forEach(function (k) {
+      if (d[k] !== undefined && d[k] !== null) { display[k] = d[k]; }
+    });
+    root.setAttribute('data-theme', display.theme || 'normal');
+    root.style.setProperty('--caret-width', (display.caret || 2) + 'px');
+    root.style.setProperty('--focus-width', (display.focus || 3) + 'px');
+    root.style.setProperty('--body-weight', display.bold ? 'bold' : 'normal');
+    root.style.setProperty('--line-height', String(SPACING[display.spacing] || 1.5));
+    applyZoom();
+    layCaret();
+    return { zoom: display.zoom, theme: display.theme, caret: display.caret,
+             focus: display.focus, bold: !!display.bold, spacing: display.spacing };
   }
 
   var ACTIONS = {
@@ -891,7 +1067,7 @@ _JS = r"""
         });
       }
       placeCaret(ed, true);
-      zoom(0);
+      applyZoom();
       scheduleWords();
       postState();
       return { ok: true, words: wordCount() };
@@ -1072,12 +1248,26 @@ _JS = r"""
       return { ok: true };
     },
     zoom: function (delta) { return zoom(delta); },
+    setZoom: function (percent) { return setZoom(percent); },
+    setDisplay: setDisplay,
+    display: function () { return setDisplay({}); },
+    caretBox: function () {
+      var box = document.getElementById('tgcaret');
+      return { present: !!box, width: box ? box.style.width : "",
+               shown: !!(box && box.style.display === 'block') };
+    },
     devicePixelRatio: function () { return { ratio: window.devicePixelRatio }; }
   };
 
   document.execCommand('defaultParagraphSeparator', false, 'p');
   if (!ed.firstChild) { ed.innerHTML = '<p><br></p>'; }
-  ed.addEventListener('focus', function () { postState(); });
+  setDisplay({});
+  document.addEventListener('selectionchange', scheduleCaret);
+  ed.addEventListener('input', scheduleCaret);
+  window.addEventListener('scroll', scheduleCaret, true);
+  window.addEventListener('resize', scheduleCaret);
+  ed.addEventListener('blur', function () { layCaret(); });
+  ed.addEventListener('focus', function () { postState(); scheduleCaret(); });
   window.addEventListener('focus', function () { if (document.activeElement !== ed) { ed.focus(); } });
   post({ type: 'ready' });
   postState();
@@ -1101,13 +1291,49 @@ def _pixels(points):
         return 15
 
 
+def default_display():
+    """The screen settings a page gets when the caller names none."""
+    return {"zoom": settings_mod.DEFAULT_ZOOM,
+            "theme": settings_mod.DEFAULT_PAGE_THEME,
+            "caret": settings_mod.DEFAULT_CARET_WIDTH,
+            "focus": settings_mod.DEFAULT_FOCUS_RING,
+            "bold": False,
+            "spacing": settings_mod.DEFAULT_LINE_SPACING}
+
+
+def clean_display(display):
+    """The screen settings, every one of them inside its own range.
+
+    The page is handed these as JSON, so a value that came from a hand
+    edited settings file cannot become script: each one is forced to a
+    number, a boolean or a name from the list.
+    """
+    out = default_display()
+    given = dict(display or {})
+    out["zoom"] = settings_mod._whole(given.get("zoom"), settings_mod.MIN_ZOOM,
+                                      settings_mod.MAX_ZOOM, settings_mod.DEFAULT_ZOOM)
+    out["caret"] = settings_mod._whole(given.get("caret"), settings_mod.MIN_CARET_WIDTH,
+                                       settings_mod.MAX_CARET_WIDTH,
+                                       settings_mod.DEFAULT_CARET_WIDTH)
+    out["focus"] = settings_mod._whole(given.get("focus"), settings_mod.MIN_FOCUS_RING,
+                                       settings_mod.MAX_FOCUS_RING,
+                                       settings_mod.DEFAULT_FOCUS_RING)
+    if given.get("theme") in settings_mod.PAGE_THEMES:
+        out["theme"] = given["theme"]
+    if given.get("spacing") in settings_mod.LINE_SPACINGS:
+        out["spacing"] = given["spacing"]
+    out["bold"] = bool(given.get("bold"))
+    return out
+
+
 def build_page(bindings, deny, lang="en-US", page=None, body_html="",
-               textbox_role=True, nonce=None):
+               textbox_role=True, nonce=None, display=None):
     """The whole document, ready for WebView.SetPage.
 
     `bindings` and `deny` come from keymap.page_bindings() and
     keymap.DENY_CHORDS. `page` holds size, margin_inches, font_family and
-    font_points (constants fill in what is missing). `body_html` must already
+    font_points (constants fill in what is missing). `display` holds the
+    screen settings, which are the screen only. `body_html` must already
     be sanitised: this function trusts it, the wrapper does not.
     """
     page = dict(page or {})
@@ -1120,7 +1346,10 @@ def build_page(bindings, deny, lang="en-US", page=None, body_html="",
     css = _CSS % {"font": font, "px": _pixels(points), "width": width,
                   "height": height, "margin": margin}
     js = (_JS.replace("__BINDINGS__", json.dumps(list(bindings)))
-             .replace("__DENY__", json.dumps(list(deny))))
+             .replace("__DENY__", json.dumps(list(deny)))
+             .replace("__ZOOMS__", json.dumps(list(settings_mod.ZOOM_STEPS)))
+             .replace("__SPACING__", json.dumps(settings_mod.LINE_SPACING_VALUES))
+             .replace("__DISPLAY__", json.dumps(clean_display(display))))
     role = ('role="textbox" aria-multiline="true" ' if textbox_role else "")
     csp = ("default-src 'none'; script-src 'nonce-%s'; style-src 'unsafe-inline'; "
            "img-src data:; base-uri 'none'; form-action 'none'" % nonce)

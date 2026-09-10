@@ -6,7 +6,7 @@ Every key works while you are typing in the document. The same keys are in the m
 
 ## The headings and the AltGr rule
 
-Ctrl+Alt+1 to Ctrl+Alt+6 set heading levels 1 to 6, Ctrl+Alt+0 makes normal text, Ctrl+Alt+8 a bullet list and Ctrl+Alt+9 a numbered list. On German, French, Polish, Spanish and Portuguese keyboards Ctrl+Alt is AltGr and some of those chords type a character instead, so Easy PDF acts on them only when the key really was the digit. The same commands are also on Ctrl+Shift+0 to Ctrl+Shift+9, which work on every layout.
+Ctrl+Alt+1 to Ctrl+Alt+6 set heading levels 1 to 6, Ctrl+Alt+0 makes normal text, Ctrl+Alt+8 a bullet list and Ctrl+Alt+9 a numbered list. On German, French, Polish, Spanish and Portuguese keyboards Ctrl+Alt is AltGr and some of those chords type a character instead, so TG Imprint acts on them only when the key really was the digit. The same commands are also on Ctrl+Shift+0 to Ctrl+Shift+9, which work on every layout.
 
 ## Inside lists and tables
 
@@ -66,14 +66,19 @@ Enter at the end of a heading starts a normal paragraph. Enter on an empty list 
 | Tools | Describe picture... | Ctrl+D | Ask Claude, ChatGPT or Gemini to describe the picture at the caret. |
 | Tools | Describe document... | Ctrl+Shift+D | Ask an AI service to describe the whole document. |
 | Tools | Check accessibility of a PDF... | Ctrl+Shift+A | Run the accessibility checks on any PDF and read the report. |
-| Tools | Preferences... | Ctrl+, | Spoken feedback, document defaults and the AI services. |
+| Tools | Fill in a PDF form... | Ctrl+Shift+F | Open a PDF that has form fields and fill them in from a list, one field at a time. A PDF with no fields can be looked over for the blanks first. |
+| Tools | Preferences... | Ctrl+, | Spoken feedback, document defaults, the screen and the AI services. |
 | View | Next heading | F6 | Move the caret to the next heading. |
 | View | Previous heading | Shift+F6 | Move the caret to the previous heading. |
 | View | Structure navigator... | Alt+F6 | Every heading in a list; Enter jumps to it. |
 | View | Pictures... | Ctrl+Shift+Alt+P | Every picture with its description, or the ones still needing one. |
 | View | Zoom in | Ctrl+= | Make the page larger on screen. |
 | View | Zoom out | Ctrl+- | Make the page smaller on screen. |
-| View | Actual size | Ctrl+0 | Show the page at its normal size. |
+| View | Actual size | Ctrl+0 | Show the page at its normal size, one hundred percent. |
+| View, Toolbar labels | Icons only |  | Show the toolbar as icons with no words. |
+| View, Toolbar labels | Icons with labels |  | Show the toolbar as icons with a word under each one. |
+| View, Toolbar labels | Labels only |  | Show the toolbar as words with no icons. |
+| View | Display options... |  | Text size, page colours, the caret, the focus ring, bold text and line spacing. All of them are the screen only: an exported PDF is always black text on a white page. |
 | Help | Keyboard shortcuts | F1 | This list, in a window you can read. |
 | Help | User guide on the web |  | Open the user guide in your browser. |
 | Help | Check for updates |  | Ask whether a newer version exists. |
