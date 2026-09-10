@@ -1848,3 +1848,18 @@ part of the app follows:
   PAC and veraPDF specifically, if Tony approves the downloads.
 - The `embed` keyword on `normalise` and the `report` field on
   `ExportResult` are accepted additions to the interfaces.
+
+
+## Additions after 0.1.0, recorded so the interfaces stay honest
+
+- `describe.payload_estimate(body_html, images)` still returns three values
+  (words, pictures, kilobytes), as C2 says. `describe.payload_plan` is the
+  additive four value version (words, pictures, attached, kilobytes) that
+  the consent question uses, so the number it says is the number that goes.
+- `describe.find_form_fields(page_image, page_index, page_width,
+  page_height, provider, model, known=None, progress=None)` returns
+  `(True, [Proposal])` or `(False, sentence)`. Consent kind is
+  `"form page"`, and it asks every time.
+- `tgimprint/pdfforms.py` is a new module owned by Worker A: filling PDF
+  forms in place, and proposing fields for a form that has none. It never
+  goes through the import path, which would destroy the layout.

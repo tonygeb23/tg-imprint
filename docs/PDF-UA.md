@@ -274,6 +274,64 @@ A page with no text is a scanned page. When every page is, `is_scanned`
 is set and the warning says there is no text recognition in this
 release.
 
+## Form fields, and what is honestly claimed about them
+
+`tgimprint/pdfforms.py` fills in a PDF form somebody sent, and puts fields
+on a form that has none. `docs/FORMS.md` is the whole of that feature; this
+section is only what it means for accessibility and for a PDF/UA claim.
+
+PDF/UA asks three things of a form field. It must be reachable and
+announced, which means the widget annotation carries a **/TU**, the
+alternate description a screen reader reads out instead of, or beside, the
+printed label. It must sit in the structure tree as a **Form** element
+containing the widget's **OBJR**, so that reading order and tab order are
+the document's order and not the file's. And the page must carry
+**/Tabs /S** so tabbing follows that structure.
+
+**What TG Imprint does.**
+
+- **Every field it adds carries a /TU**, taken from the label it read off
+  the page beside the blank, or, when there is no label anywhere near, the
+  words "Blank 3 on page 2" so the field is at least announced as
+  something rather than as nothing. This is the part that decides whether
+  a form is usable with NVDA, and it is done for every field, always.
+  `tests/test_forms.py` reads the /TU of all 28 fields back with pikepdf.
+- **Fields are added in reading order**, top of the page down and left to
+  right along a row, so the /Annots array is in the order a person would
+  work through the form. Most viewers tab in /Annots order when no
+  structure says otherwise, so this is what actually decides tab order on
+  a flat form.
+- **The page is marked /Tabs.** A document that already has a structure
+  tree gets **/Tabs /S**, which is what PDF/UA asks for. A flat form, which
+  has no structure tree at all, gets **/Tabs /R**, row order, because /S
+  on a page with nothing to point at leaves the viewer guessing, and row
+  order is exactly the order the fields were added in. That is a
+  deliberate choice, and it is the honest one for an untagged file.
+- **Filling in a form that already has fields changes no tagging at all.**
+  The save is incremental: the structure tree, the /TU strings and the
+  /Tabs the original author wrote are left exactly as they were.
+
+**What it does not do, and why.**
+
+- **No Form structure elements are written.** A flat healthcare form has no
+  structure tree, and building one from a page of text and drawings would
+  be inventing a reading order out of guesswork, which is the fault this
+  whole program exists to avoid. PyMuPDF writes no structure tree in any
+  case (see the top of this file), so there is nothing to hang an OBJR on.
+- **So a form TG Imprint has added fields to is not PDF/UA conformant**,
+  and nothing in it claims to be: no XMP `pdfuaid:part` identifier is
+  written, and the checker is not run on it. It is a form that a screen
+  reader can now be used to fill in, which is what was asked for, and that
+  is all it says it is.
+- **A signature added here is a typed name or a picture**, drawn onto the
+  page, with no certificate behind it. When it is put into an empty
+  signature field, that field is then removed, so nothing left in the file
+  claims a digital signature that is not there.
+
+A later release that gives PyMuPDF a structure tree, or that runs a form
+back through the export, could tag the fields properly. Until then this
+section is the whole truth about what is in the file.
+
 ## Not in 1.0.0
 
 - Right to left languages: warned about, not claimed.
