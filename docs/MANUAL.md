@@ -4,7 +4,7 @@ TG Imprint is a small word processor for Windows that writes PDFs screen
 readers can actually read. This is the whole of it: what it does, how to
 do it, and what it will not do in this version.
 
-Version 0.1.0, an open beta. Free, and MIT licensed: the source is at
+Version 0.2.0, an open beta. Free, and MIT licensed: the source is at
 https://github.com/tonygeb23/tg-imprint.
 
 ---
@@ -24,11 +24,13 @@ https://github.com/tonygeb23/tg-imprint.
 11. Finding your way around a document
 12. Saving, and the file it writes
 13. Printing
-14. Preferences: speech, page defaults, AI
-15. Updating
-16. What is not in this beta
-17. When something goes wrong
-18. Every key
+14. Filling in a PDF form
+15. Low vision settings
+16. Preferences: speech, page defaults, AI
+17. Updating
+18. What is not in this beta
+19. When something goes wrong
+20. Every key
 
 ---
 
@@ -292,7 +294,77 @@ app or the machine goes down, the next start offers what it saved.
 **Ctrl+P** makes the same tagged PDF and sends it to your printer. It asks
 for a title first, for the same reason the export does.
 
-## 14. Preferences: speech, page defaults, AI
+## 14. Filling in a PDF form
+
+**Ctrl+Shift+F**, or Tools then Fill in a PDF form. This is a different job
+from writing a document, and it works differently: it edits the PDF you
+open, in place, and never rebuilds it, so the page comes out looking
+exactly as it went in.
+
+**A form that already has fields.** You get a list, not a picture. Each row
+is the label, the kind of field and what is in it, in reading order, with
+the page number. Enter or F2 edits the one you are on, in a proper labelled
+box, tick box or list. The app says how many fields there are and how many
+are still empty.
+
+Save writes the values back into the same file. Save a copy leaves the
+original alone. Save flattened bakes the answers into the page for
+printing, and says plainly that nobody can correct it afterwards.
+
+**A form with no fields at all**, which is most of what arrives from a
+hospital, a council or a school. The app reads the page itself and looks
+for the places a person would write: runs of underscores, ruled lines with
+a label to their left, empty boxes, brackets meant to be ticked, a colon
+with nothing after it, and the empty cells of a ruled table. It offers what
+it found as a list you go through: keep it, rename it, or throw it out.
+Nothing is written into the file until you say so.
+
+Then it adds real fields where you approved them, each carrying the label
+you approved as the name your screen reader reads out, with no border and
+no shading, so the printed page is unchanged. From that point it is an
+ordinary form and you fill it in from the list.
+
+**When the drawing on the page is not enough**, and the blanks are dotted
+lines or round tick boxes or the layout is unusual, you can ask Claude,
+ChatGPT or Gemini to look at a picture of the page and say where the blanks
+are and what they are called. It uses your own key, the same one as the
+picture describer. It asks before the page leaves your machine, every
+single time, because a form somebody sent you is their document. What comes
+back is a proposal you approve, the same as the rest.
+
+**Signatures.** You can type your name into a signature box, in a script
+face, or place a picture of your signature. Say plainly what this is: it is
+a typed or drawn signature, the kind most forms actually accept, and it is
+**not** a cryptographic digital signature. If a form needs the real thing,
+this is not it.
+
+**Two honest limits.** A scanned form, which is a photograph of paper, has
+nothing to read and nothing can be added to it here. And a form that had no
+fields to begin with has no structure inside it to tag, so a filled form is
+not a PDF/UA document and the app claims nothing about it.
+
+## 15. Low vision settings
+
+Preferences, then the Display page. Everything here changes what you see on
+screen and **nothing here changes the PDF**, which is always black on white
+at the page size in Document properties.
+
+- **Text size**, from 70 to 300 percent. Ctrl+equals and Ctrl+minus step it
+  and Ctrl+0 puts it back to normal, and whatever you set is still there
+  the next time you open the app.
+- **Page theme**: Normal, which is black on white paper; Dark; High
+  contrast, which follows your Windows setting; and Yellow on black.
+- **Caret width**, two to six pixels, because a one pixel caret disappears
+  at 200 percent.
+- **Focus ring width**, so you can see where you are.
+- **Bold body text**, for when weight helps more than size.
+- **Line spacing**: normal, one and a half, or double.
+- **Toolbar**: icons only, icons with labels, or labels only.
+
+Windows high contrast is respected in the editor whether or not you choose
+that theme, and the app never fights it.
+
+## 16. Preferences: speech, page defaults, AI
 
 **Ctrl+comma** opens Preferences.
 
@@ -311,7 +383,7 @@ document starts with.
 
 **AI** is the provider, the model and the key, described in section 6.
 
-## 15. Updating
+## 17. Updating
 
 TG Imprint checks once a day, quietly, and tells you only when there is
 something. Help, then Check for updates asks on demand and answers either
@@ -324,11 +396,12 @@ navigate and nothing to click through.
 
 A copy running from the portable zip updates the same way.
 
-## 16. What is not in this beta
+## 18. What is not in this beta
 
 Said plainly, so you can decide whether it is any use to you yet:
 
-- No text recognition, so a scanned PDF cannot be imported.
+- No text recognition, so a scanned PDF cannot be imported, and a
+  scanned form cannot be given fields.
 - No right to left languages. Arabic and Hebrew are not tested and the
   reading order may be wrong. The export warns you if it sees them.
 - No footnotes, page numbers, columns, headers or footers.
@@ -339,7 +412,7 @@ Said plainly, so you can decide whether it is any use to you yet:
 - Tested with NVDA. JAWS and Narrator should work and are not yet tested;
   tell me what you hear.
 
-## 17. When something goes wrong
+## 19. When something goes wrong
 
 Everything the app refuses to do, it explains in a sentence, in a window
 you can read back rather than a message that flashes past.
@@ -356,7 +429,7 @@ It is a beta. If something breaks, or a description reads wrongly, or your
 screen reader says something unhelpful, write to info@tonygebhard.me and
 say what you did and what you heard.
 
-## 18. Every key
+## 20. Every key
 
 The full list is in the app on F1, and in `docs/KEYBOARD.md` beside this
 manual. It is generated from the code, so it cannot go stale.
