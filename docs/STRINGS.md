@@ -287,6 +287,94 @@ Details:
 - `ExportResult.pdfua_claimed` is True or False; the first line of the
   export dialog is Worker B's.
 
+### PDF forms (`pdfforms.py`), all draft
+
+Filling in a form somebody sent, and putting fields on one that has none.
+The first four repeat the sentences under "Opening a PDF" word for word,
+on purpose, so there is one wording for one situation.
+
+- "That file is not a PDF."
+- "That file could not be found."
+- "This PDF is protected by a password, so it cannot be opened."
+- "The PDF could not be opened. %s" (the reason, as a sentence)
+
+Filling one in:
+
+- "This form is closed. Open it again to make changes."
+- "There is no field by that name in this form."
+- "%s cannot be changed. Whoever made this form locked it."
+- "%s is a signature field. Use Sign to put a typed name or a picture of
+  your signature in it."
+- "%s is a button, so there is nothing to fill in."
+- "%s holds at most %d characters and that is %d."
+- "%s does not offer that. The choices are %s."
+- "%s is a single line, so the line breaks became spaces. It now reads %s."
+- "%s is now %s."
+- "%s is now empty."
+- "%s is ticked."
+- "%s is not ticked."
+- "%s is set to none of them." (a radio group cleared)
+- "The answers are printed onto the page now, so there is nothing left to
+  fill in."
+
+Saving:
+
+- "Saved. The form holds what you typed."
+- "Saved a copy as %s." (the file name)
+- "Saved with the answers printed onto the page. The fields are gone, so
+  nobody can change what you wrote, and nobody can correct it either."
+- "The form could not be saved. %s"
+- "Nothing has changed, so nothing was saved."
+
+Putting fields on a form that has none:
+
+- "This PDF has no form fields. TG Imprint can look for the blanks and put
+  fields on it for you."
+- "Added %d fields. Check every one of them: TG Imprint worked out where
+  the blanks are by looking at the page, and it can be wrong."
+- "Added one field. Check it: TG Imprint worked out where the blank is by
+  looking at the page, and it can be wrong."
+- "No fields were added."
+- "No blanks were found on this form, so there was nothing to add."
+- "Blank %d on page %d" (a field label, not a sentence: what an unlabelled
+  blank is called so it is still offered)
+
+Signing, which is a typed name or a picture and says so every time:
+
+- "Your name is written in %s. This is a typed name, not a digital
+  signature."
+- "Your signature picture is in %s. This is a picture, not a digital
+  signature."
+- "The signature does not fit in that space."
+- "That file is not a picture TG Imprint can read. PNG, JPEG, GIF, BMP and
+  WebP pictures work." (the same sentence as Pictures on the way in)
+- "There is nowhere to put the signature. Choose a signature field, or the
+  space to sign in."
+- "There is no name to write."
+- "This PDF has no page %s."
+
+The spoken summary of a form, built from three pieces:
+
+- "This form has %s on %s: %s." which reads, for example, "This form has 8
+  fields on one page: 3 text boxes, one box for several lines, one tick
+  box, one radio group, one list to choose from and one signature."
+- "%s filled in, %s still empty." which reads "2 filled in, 6 still
+  empty.", or "None filled in, 28 still empty."
+- "One field cannot be changed." / "3 fields cannot be changed."
+
+The names of the kinds, as they are spoken in that summary: text box,
+box for several lines, tick box, radio group, list to choose from,
+signature, button. "Radio group" is deliberate: it is what NVDA says.
+
+### For the UI to build on (forms; Worker B chooses the wording)
+
+- `Field.kind` is "text", "multiline text", "checkbox", "radio", "choice",
+  "signature" or "button"; `Field.read_only` and `Field.required` are
+  True or False; the wording of the dialog is Worker B's.
+- `Proposal.source` is "underscores", "line", "box", "colon" or "ai" and
+  `Proposal.confidence` runs from 0 to 1; how sure is turned into words is
+  Worker B's. docs/FORMS.md has the table of what each source means.
+
 ## Worker B (UI and accessibility)
 
 Every sentence the window, the editor page and the dialogs show or speak.
@@ -565,8 +653,13 @@ the answer. Status: draft unless marked otherwise.
   what it receives; the address of its data policy is in TG Imprint's
   guide, DESCRIBER.md, and it is {address}. Send the document?" Without
   a file name, "your whole document". The count reads "no pictures", "one
-  picture", "{n} pictures", or over the cap "the first 12 of its {n}
-  pictures".
+  picture" or "{n} pictures" when every picture goes. When fewer go than the
+  document holds, which the twelve picture cap, the twelve megabyte budget
+  and a picture that cannot be read can each cause, it reads "the first {n}
+  of its {n} pictures", or "one of its {n} pictures", or "none of its {n}
+  pictures, because none of them could be read". The number said is the
+  number that really goes, not the cap. Over thirty thousand words it reads
+  "the first 30,000 of its {n} words".
 - A picture from the user's own disk: "This sends one picture to {who},
   over the internet, {size}, so it can be described for you. The
   description comes back for you to read and change before anything goes
@@ -583,6 +676,14 @@ the answer. Status: draft unless marked otherwise.
   so they can be described for you. A batch of pictures asks every time.
   Each description comes back for you to read and change before anything
   goes into your document. [policy sentence]. Send the pictures?"
+- One page of a form, to find the blanks in it: "This sends a picture of
+  page {n} of this form to {who}, over the internet, {size}, so it can look
+  for the blanks somebody would write in. A form somebody sent you is their
+  document, so TG Imprint asks every time before any of it leaves this
+  machine. What comes back is a list of boxes for you to go through and
+  approve; nothing is put into your form until you accept it. [policy
+  sentence]. Send the page?" Without a page number, "a picture of one page of
+  this form".
 - The Drop Deck key: "TG Imprint will read the key for {who} that TG Drop
   Deck keeps in Windows Credential Manager, and keep its own copy under
   TG Imprint's name. Nothing is sent anywhere. Copy the key?"
@@ -659,6 +760,30 @@ the answer. Status: draft unless marked otherwise.
 - "Testing with {who}."
 - "{who} answered in {n} seconds: {text}"
 
+### Finding the blanks on a page of a form
+
+Said while it runs, or in place of an answer. `{who}` is the provider.
+
+- "Asking {who} where the blanks on this page are. This usually takes a few
+  seconds."
+- "{n} of the {n} blanks {who} proposed were not on the page and have been
+  left out."
+- "{who} answered, but not with the list of blanks TG Imprint asked for, so
+  nothing has been proposed. Try again, or try another model on the AI page
+  of Preferences."
+- "{who} found no blanks it was sure of on this page. Nothing has been
+  proposed, and you can still add a field yourself."
+- "{who} proposed {n} blanks, but none of them was on the page, so none has
+  been used. Try again, or add the fields yourself."
+- "There is no picture of the page to look at, so nothing has left this
+  machine."
+- "The picture of the page could not be prepared for sending, so nothing has
+  left this machine."
+- "The size of this page is not known, so there is nowhere to put a box.
+  Nothing has left this machine."
+- "TG Imprint could not turn the blanks into fields on the page. Nothing has
+  been changed in your form."
+
 ### Failures, from `ai.py`
 
 Drop Deck's sentences, with "the show" replaced by "your document".
@@ -698,35 +823,94 @@ Drop Deck's sentences, with "the show" replaced by "your document".
   to read out." (approved in Drop Deck)
 - "{who} looked at the picture and said nothing back." (approved in Drop
   Deck)
+- "{who} ran out of room before it finished the answer, so what came back
+  stops in the middle and has not been used. Try again. If it keeps
+  happening, put a quicker model in the Model box on the AI page of
+  Preferences: a model that thinks before it answers can spend the whole
+  answer budget on thinking." (new 2026-09-09. A model that thinks before it
+  answers spends the answer budget on thinking first, and a description that
+  stops in the middle would otherwise be tidied up and offered as
+  alternative text, where nobody can see that it stopped.)
 - Model list: "That is not a service this app knows." / "The list came
   back in a shape this app did not expect." / "That account has no models
   that can look at pictures." (all Drop Deck's)
 
 ### The prompts, asked in Tony's name
 
-Not spoken. Listed in full in `docs/DESCRIBER.md` under "The words that
-are asked in your name"; summarised here.
+Not spoken, and not shown unless somebody goes looking, but they are asked in
+Tony's name on his key, so every word of them is here. The four long prompts
+are printed in full in `docs/DESCRIBER.md` under "The words that are asked in
+your name", which is the one place to read them; every SHORTER sentence the
+app builds around them is listed here, because those are the ones a summary
+would hide.
 
-- One picture, short: the alternative text prompt ending "Write one or
-  two sentences saying what the picture shows and what it is for in the
+- One picture, short: the alternative text prompt ending "Write one or two
+  sentences saying what the picture shows and what it is for in the
   document."
-- One picture, in detail: the same, ending with the paragraph that asks
-  for "up to about a hundred and fifty words".
+- One picture, in detail: the same, ending with the paragraph that asks for
+  "up to about a hundred and fifty words".
 - The context line: "Where the picture sits in the document, so the
   description fits it:" followed by the heading and paragraph the editor
   passes.
-- The whole document: the four-part prompt (what it is, its structure,
-  each picture, what an accessibility check would flag), then the
-  attachment sentences and the outline with its labels "Heading level
-  {n}:", "Paragraph:", "List item:", "Quotation:", "Caption:", "Picture
-  {n}, described as:", "Picture {n}, no description.", "Picture {n},
-  marked decorative, no description.", "(this description was written
-  by AI and has not been checked by a sighted person)", "(this
-  description was recovered from a file and has not been checked)",
-  "(link to {address})", "Table starts.", "Header row:", "Row:", "Table
-  ends, {n} rows and {n} columns."
-- The Test button: "In at most ten words, say what shape and colour is
-  in this picture." and, without a picture, "Reply with the single word:
-  ready."
+- The whole document: the four part prompt (what it is, its structure, each
+  picture, what an accessibility check would flag).
 
-- Added 2026-09-09 after the Overseer's review: "Type or ask for a description first." (picture dialog, empty description on Use this description). The consent question now says "the first 30,000 of its N words" when a document is over the cap, and names the number of pictures that will really go. Status: draft.
+Then exactly one of these, saying what is attached:
+
+- "The document has no pictures."
+- "The document's one picture is attached."
+- "All {n} of the document's pictures are attached, in order."
+- "The document has {n} pictures. Only these are attached, in this order: 1,
+  2 and 3. The others were not sent; say that they were not described rather
+  than guessing at them."
+
+Then, when they apply:
+
+- "Picture {n} could not be read by the program that sent this, so it is not
+  attached." (plural: "Pictures 2 and 5 could not be read by the program that
+  sent this, so they are not attached.")
+- "The document is long, so only its first 30,000 words are given."
+
+Then "The document:" and the outline, one line per block, with these labels:
+"Heading level {n}:", "Paragraph:", "List item:", "Quotation:", "Caption:",
+"Term:", "Definition:", "Preformatted text:", "Text:", "Picture {n},
+described as:", "Picture {n}, no description.", "Picture {n}, marked
+decorative, no description.", "(this description was written by AI and has
+not been checked by a sighted person)", "(this description was recovered from
+a file and has not been checked)", "(link to {address})", "Table starts.",
+"Header row:", "Row:", "Table ends, {n} rows and {n} columns." A document
+with no text at all is given as "(The document has no text.)"
+
+Finding the blanks on one page of a form:
+
+- The prompt is printed in full in `docs/DESCRIBER.md` under "Finding the
+  blanks on a page of a form". It gives the page size in points, says the
+  origin is the top left corner, asks for strict JSON with `label`, `rect`
+  and `kind`, and tells the model to be accurate rather than complete and to
+  leave out anything it is not sure of.
+- When Worker A has already found blanks on the page, this is added: "TG
+  Imprint has already found these blanks on this page by looking at the
+  lines, boxes and underscores drawn on it, with the same origin and the same
+  units:" then one line each, as "{label}" at [left, top, right, bottom] or
+  "no label, at [left, top, right, bottom]", then "Do not give any of those
+  back. Give only the blanks that are missing from that list. The one
+  exception is a label: if one of them has a label that is plainly wrong for
+  the place it sits in, give that one again with the label corrected and the
+  same rectangle."
+
+The Test button on the AI page:
+
+- "In at most ten words, say what shape and colour is in this picture." and,
+  without a picture, "Reply with the single word: ready."
+
+### Added after the Overseer's round 2 review, 2026-09-09
+
+All draft, all Worker C's.
+
+- "Type or ask for a description first." (the picture dialog, when Use this
+  description is pressed with the field empty)
+- The document consent question's word and picture counts now say what really
+  goes, above.
+- The cut off answer sentence in the `ai.py` list above.
+- The whole of "Finding the blanks on a page of a form", which is new work
+  and not a review fix.

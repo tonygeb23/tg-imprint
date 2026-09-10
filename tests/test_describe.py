@@ -122,8 +122,10 @@ many = [CIRCLE] * 15
 words, pictures, kilobytes = describe.payload_estimate("<p>x</p>", many)
 words12, pictures12, kilobytes12 = describe.payload_estimate("<p>x</p>", [CIRCLE] * 12)
 check("fifteen pictures are counted as fifteen", pictures == 15)
-check("but only the first %d are measured, so the size matches twelve"
-      % describe.PICTURE_CAP, abs(kilobytes - kilobytes12) < 0.001,
+check("but only the first %d are measured, so the size is a twelve picture "
+      "size and not a fifteen picture one" % describe.PICTURE_CAP,
+      abs(kilobytes - kilobytes12) < 1.0
+      and kilobytes < kilobytes12 + (kilobytes12 - 12) / 12.0,
       "%.2f against %.2f" % (kilobytes, kilobytes12))
 chosen, over_cap, over_budget, unreadable = describe._select(many)
 check("the selection sends the first twelve and names the rest",
@@ -141,6 +143,84 @@ check("the byte budget stops the batch and names what stayed behind",
       [n for n, _p in chosen] == [1] and over_budget == [2, 3, 4], (over_budget,))
 check("the picture cap is twelve, with the reasoning in the file",
       describe.PICTURE_CAP == 12)
+
+# ---------------------------------------------------------------------------
+head("The size and the count in the question are the size and the count "
+     "that go")
+
+# Defect 3 and defect 4 of the round 2 review. The question used to say the
+# whole document's word count and the whole outline's size for a book, and
+# "the first 12 of its N pictures" even when the byte budget or an unreadable
+# picture meant fewer than twelve really went.
+
+long_body = "<p>" + " ".join("w%d" % i for i in range(40000)) + "</p>"
+at_cap = "<p>" + " ".join("w%d" % i for i in range(30000)) + "</p>"
+words, pictures, attached, kilobytes = describe.payload_plan(long_body, [])
+capped = describe.payload_plan(at_cap, [])[3]
+uncut = len("\n".join(describe.analyse(long_body).lines).encode("utf-8")) / 1024.0
+check("a book is counted at its real length", words == 40000)
+check("but the size measured is the CUT document: a 40,000 word document "
+      "measures the same as a 30,000 word one, not a quarter more",
+      abs(kilobytes - capped) < 1.0 and kilobytes < uncut - 20,
+      "%.0f KB, at the cap %.0f KB, uncut %.0f KB"
+      % (kilobytes, capped, uncut))
+question = describe.consent_question("document", "google", pictures, words,
+                                     kilobytes, False, "Book.imprint")
+check("and the question says which words go",
+      "the first 30,000 of its 40,000 words" in question, question[:150])
+
+saved = describe.PAYLOAD_BUDGET_KB
+describe.PAYLOAD_BUDGET_KB = 2.0
+try:
+    words, pictures, attached, kilobytes = describe.payload_plan(
+        "<p>x</p>", [CIRCLE] * 15)
+finally:
+    describe.PAYLOAD_BUDGET_KB = saved
+check("with a byte budget that stops after one picture, the plan says one "
+      "picture is attached, not twelve", pictures == 15 and attached == 1,
+      (pictures, attached))
+question = describe.consent_question("document", "google", pictures, words,
+                                     kilobytes, False, attached=attached)
+check("and the question says one of its fifteen pictures, not the cap",
+      "one of its 15 pictures" in question
+      and "first 12" not in question, question[:200])
+
+words, pictures, attached, kilobytes = describe.payload_plan(
+    "<p>x</p>", [CIRCLE, b"junk", None, CIRCLE, b"junk"])
+check("pictures that cannot be read are counted in the document but not "
+      "attached", pictures == 5 and attached == 2)
+question = describe.consent_question("document", "google", pictures, words,
+                                     kilobytes, False, attached=attached)
+check("and the question says two of its five pictures",
+      "the first 2 of its 5 pictures" in question, question[:200])
+question = describe.consent_question("document", "google", 3, 10, 4, False,
+                                     attached=0)
+check("when not one picture could be read the question says so",
+      "none of its 3 pictures, because none of them could be read" in question,
+      question[:200])
+check("and a document whose pictures all go still reads plainly",
+      "and 3 pictures" in describe.consent_question(
+          "document", "google", 3, 10, 4, False, attached=3))
+
+# The number in the question is the number the progress line says, because
+# both come from the same plan.
+plan_said = []
+real_ask_here = ai.ask
+ai.ask = lambda pictures, prompt, provider, key, model="", timeout=None, \
+    max_tokens=None: (True, "described")
+real_key_here = describe.key_for
+describe.key_for = lambda provider: "k"
+try:
+    _w, _p, _a, plan_kb = describe.payload_plan(BODY, None)
+    describe.describe_document(BODY, None, "google", "",
+                               progress=plan_said.append)
+finally:
+    ai.ask = real_ask_here
+    describe.key_for = real_key_here
+sending = [line for line in plan_said if line.startswith("Sending")]
+check("the size the question would say is the size the progress line says",
+      len(sending) == 1
+      and describe._size_words(plan_kb) in sending[0], (sending, plan_kb))
 
 # ---------------------------------------------------------------------------
 head("The outline the model is given")
@@ -217,6 +297,93 @@ check("a long document is cut at the word cap and the prompt says so",
       "first 10 words" in cut and "w9" in cut and "w10" not in cut)
 for text in (short, long, document):
     check("no dashes in the prompt", chr(8212) not in text and chr(8211) not in text)
+
+# ---------------------------------------------------------------------------
+head("Every sentence the prompts build is in docs/STRINGS.md")
+
+# Defect 9 of the round 2 review: the prompts were summarised in STRINGS.md,
+# and ten sentences the app really sends appeared nowhere in it, so Tony
+# could not approve what is asked in his name. These sentences are taken from
+# the code, not typed out here, so changing the wording without changing
+# STRINGS.md fails this check.
+
+STRINGS = " ".join(open(os.path.join(os.path.dirname(HERE), "docs",
+                                     "STRINGS.md"),
+                        encoding="utf-8").read().split())
+
+
+def digitless(sentence):
+    """The parts of a sentence with no numbers in them, long enough to be
+    worth matching. STRINGS.md writes a number as {n}, so the numbers
+    themselves are what must NOT be compared."""
+    import re as _re
+    return [part.strip() for part in _re.split(r"[0-9][0-9,]*", sentence)
+            if len(part.strip()) > 14]
+
+
+def in_strings(label, sentence):
+    missing = [part for part in digitless(sentence) if part not in STRINGS]
+    check("STRINGS.md has %s" % label, not missing, missing[:1])
+
+
+def attached_sentences(**kw):
+    """The sentences document_prompt adds after the standing prompt, which
+    are the ones that were missing."""
+    whole = describe.document_prompt("<p>x</p>", **kw)
+    middle = whole[len(describe._DOCUMENT):whole.index("The document:")]
+    return [line.strip() for line in middle.splitlines() if line.strip()]
+
+
+for label, kw in (
+        ("no pictures", dict(pictures_total=0, sent=[])),
+        ("one picture", dict(pictures_total=1, sent=[1])),
+        ("all of them", dict(pictures_total=4, sent=[1, 2, 3, 4])),
+        ("only some of them", dict(pictures_total=5, sent=[1, 2, 3])),
+        ("one that could not be read",
+         dict(pictures_total=2, sent=[1], unreadable=[2])),
+        ("two that could not be read",
+         dict(pictures_total=3, sent=[1], unreadable=[2, 3])),
+        ("a document cut at the word cap",
+         dict(pictures_total=0, sent=[], truncated_words=30000))):
+    for sentence in attached_sentences(**kw):
+        in_strings("the attachment sentence for %s" % label, sentence)
+
+empty = describe.document_prompt("", pictures_total=0, sent=[])
+in_strings("the line for a document with no text at all",
+           "(The document has no text.)")
+check("which is what a document with no text really sends",
+      empty.rstrip().endswith("(The document has no text.)"))
+
+outline_lines = describe.analyse(BODY).lines + describe.analyse(
+    '<img alt="x" data-alt-source="ai:google">'
+    '<img alt="y" data-alt-source="pdf"><img src="x">').lines
+for line in outline_lines:
+    label = line.split(":")[0] + ":" if ":" in line else line
+    in_strings("the outline label in %r" % label[:30], label)
+for mark in ("(this description was written by AI and has not been checked "
+             "by a sighted person)",
+             "(this description was recovered from a file and has not been "
+             "checked)"):
+    in_strings("the unchecked description mark", mark)
+
+# The prompts are quoted in DESCRIBER.md, so every line starts "> " and the
+# quote marks have to come off before the words can be compared.
+DESCRIBER = " ".join(
+    line[2:] if line.startswith("> ") else line[1:] if line == ">" else line
+    for line in open(os.path.join(os.path.dirname(HERE), "docs",
+                                  "DESCRIBER.md"),
+                     encoding="utf-8").read().splitlines()).split()
+DESCRIBER = " ".join(DESCRIBER)
+for label, sentence in (
+        ("the form question's origin line",
+         "the origin is the TOP LEFT corner of the page"),
+        ("the form question's accuracy rule",
+         "Be accurate rather than complete."),
+        ("the form question's rule against an invented label",
+         "Never invent a label and never guess one from the shape of the "
+         "form.")):
+    check("DESCRIBER.md has %s" % label,
+          " ".join(sentence.split()) in DESCRIBER, sentence[:40])
 
 # ---------------------------------------------------------------------------
 head("Tidying an answer into alternative text")
@@ -381,9 +548,49 @@ def pump(until, seconds=6.0):
 
 
 describe.reset_consent()
+
+# Defect 8 of the round 2 review: the preview used to be decoded inside
+# __init__, so a photograph held the dialog shut for a sixth of a second
+# before a single key could reach it. The decode now runs on a thread and the
+# bitmap arrives through wx.CallAfter, which is what this proves: the
+# decoding function is not called on the window thread.
+real_preview_data = describe_dialog.preview_data
+decoded_on = {}
+decode_started = threading.Event()
+decode_may_finish = threading.Event()
+
+
+def watched_preview_data(image_bytes, box=describe_dialog.PREVIEW_BOX):
+    decoded_on["thread"] = threading.current_thread().ident
+    decode_started.set()
+    # Two seconds of decoding, held here on purpose. Done on the window
+    # thread, as it was before, those two seconds are two seconds in which
+    # the dialog does not exist and a keystroke goes nowhere.
+    decode_may_finish.wait(2.0)
+    return real_preview_data(image_bytes, box)
+
+
+describe_dialog.preview_data = watched_preview_data
+built_at = time.monotonic()
 dialog = describe_dialog.DescribeImageDialog(
     frame, CIRCLE, current_alt="old text", context="ctx", provider="google",
     announce=spoken.append)
+building_took = time.monotonic() - built_at
+check("a slow decode does not hold the dialog shut: it was built in under a "
+      "second while the decode was still running",
+      building_took < 1.0 and decode_started.wait(5.0),
+      "built in %.2f seconds" % building_took)
+check("and the description field can be typed in before the picture has "
+      "been decoded", dialog.answer.IsEditable()
+      and not dialog.preview.GetBitmap().IsOk())
+decode_may_finish.set()
+arrived = pump(lambda: "thread" in decoded_on)
+check("the picture is decoded, and NOT on the window thread",
+      arrived and decoded_on.get("thread") not in
+      (None, threading.main_thread().ident), decoded_on)
+check("and the decoded picture reaches the preview",
+      pump(lambda: dialog.preview.GetBitmap().IsOk()))
+describe_dialog.preview_data = real_preview_data
 check("the picture preview refuses focus",
       dialog.preview is not None and not dialog.preview.AcceptsFocus()
       and not dialog.preview.AcceptsFocusFromKeyboard())
@@ -405,6 +612,17 @@ dialog._on_ok()
 check("text typed by hand is accepted with no provider marked",
       dialog.result == "typed by hand" and dialog.provider_used == "")
 dialog.Destroy()
+
+broken = describe_dialog.DescribeImageDialog(frame, b"not a picture at all",
+                                            provider="google",
+                                            announce=spoken.append)
+pump(lambda: broken.preview_note.IsShown())
+check("a picture that cannot be decoded says so where the preview would be, "
+      "and does not speak it",
+      broken.preview_note.GetLabel() == "The picture could not be shown here."
+      and not broken.preview.IsShown()
+      and spoken[-1:] != ["The picture could not be shown here."])
+broken.Destroy()
 
 # The asking flow, with the describer faked and consent answered by code.
 real_describe_image = describe.describe_image

@@ -24,11 +24,14 @@ is in it, which is the whole reason the rule is strict.
 
 The answer is never written into the document by this file or by the
 dialogs. It lands in a field the user reads and edits, and the editor only
-gets what they accept.
+gets what they accept. That holds for the blanks on a form as much as for a
+description: `find_form_fields` returns proposals, and a person approves
+them one at a time.
 """
 from __future__ import annotations
 
 import base64
+import json
 import re
 from html.parser import HTMLParser
 
@@ -140,12 +143,22 @@ def _policy_sentence(provider):
 
 
 def consent_question(kind, provider, pictures, words, kilobytes, imported,
-                     document_name=""):
+                     document_name="", attached=None, page_number=0):
     """What to put in front of somebody before anything leaves.
 
     Names the provider, the count and the size, and ends with the one
     sentence about the provider's data policy. Every wording here is in
     docs/STRINGS.md for Tony to approve.
+
+    `attached` is how many of the `pictures` will REALLY be sent, which the
+    picture cap, the byte budget and a picture that cannot be read can each
+    push below the number of pictures in the document. `payload_plan` works
+    it out; pass it, and the question says that number. Left out, it falls
+    back to the cap, which is what this said before the number was there to
+    be had.
+
+    `page_number` belongs to the "form page" kind, which sends a picture of
+    one page of a form somebody else wrote.
     """
     kind = (kind or "").strip().lower()
     who = ai.PROVIDER_NAMES.get(provider, provider)
@@ -158,19 +171,49 @@ def consent_question(kind, provider, pictures, words, kilobytes, imported,
         words = int(words or 0)
     except (TypeError, ValueError):
         words = 0
+    if attached is None:
+        attached = min(pictures, PICTURE_CAP)
+    else:
+        try:
+            attached = max(0, int(attached))
+        except (TypeError, ValueError):
+            attached = min(pictures, PICTURE_CAP)
+    attached = min(attached, pictures)
+    if kind == "form page":
+        where = "one page of this form"
+        try:
+            if int(page_number or 0) > 0:
+                where = "page %d of this form" % int(page_number)
+        except (TypeError, ValueError):
+            pass
+        return ("This sends a picture of %s to %s, over the internet, %s, so "
+                "it can look for the blanks somebody would write in. A form "
+                "somebody sent you is their document, so TG Imprint asks "
+                "every time before any of it leaves this machine. What comes "
+                "back is a list of boxes for you to go through and approve; "
+                "nothing is put into your form until you accept it. %s. Send "
+                "the page?" % (where, who, size, _policy_sentence(provider)))
     if kind == "document":
         what = ("the whole of %s" % document_name) if document_name \
             else "your whole document"
         # The size said is the size that goes: only the first WORD_CAP words
-        # are sent, and `pictures` is the number that will really go.
+        # are sent, and `attached` is the number of pictures that will really
+        # go, which the picture cap, the byte budget and a picture that
+        # cannot be read can each cut below the number in the document.
         wtext = ("about {:,} words".format(words) if words <= WORD_CAP
                  else "the first {:,} of its {:,} words".format(WORD_CAP, words))
         if pictures == 0:
             count = wtext + " and no pictures"
-        elif pictures == 1:
+        elif attached == 0:
+            count = wtext + (" and none of its {} pictures, because none of "
+                             "them could be read".format(pictures))
+        elif attached == pictures == 1:
             count = wtext + " and one picture"
-        elif pictures > PICTURE_CAP:
-            count = wtext + " and the first {} of its {} pictures".format(PICTURE_CAP, pictures)
+        elif attached < pictures:
+            count = wtext + (" and one of its {} pictures".format(pictures)
+                             if attached == 1 else
+                             " and the first {} of its {} pictures".format(
+                                 attached, pictures))
         else:
             count = wtext + " and {} pictures".format(pictures)
         return ("This sends %s to %s, over the internet, so it can be "
@@ -447,16 +490,78 @@ def _images_or_embedded(body_html, images):
     return pictures_in(body_html)
 
 
-def payload_estimate(body_html, images):
-    """`(words, pictures, kilobytes)`: what a document description would
-    send. `pictures` is the document's count; `kilobytes` is the size of
-    the ones that would actually go, prepared, plus the text."""
+class _Plan:
+    """Everything a document description is about to do, worked out once.
+
+    The consent question and the request itself are built from the SAME
+    object, so the size and the picture count somebody agrees to are the size
+    and the picture count that go. They used to be worked out twice, in two
+    functions that disagreed on a long document: the question counted the
+    whole outline and all the pictures, while the request sent the first
+    thirty thousand words and as many pictures as the byte budget allowed.
+    """
+
+    def __init__(self, words, pictures, chosen, over_cap, over_budget,
+                 unreadable, truncated, prompt, kilobytes):
+        self.words = words                #: the document's own word count
+        self.pictures = pictures          #: the document's own picture count
+        self.chosen = chosen              #: [(number, (mime, data)), ...]
+        self.over_cap = over_cap
+        self.over_budget = over_budget
+        self.unreadable = unreadable
+        self.truncated = truncated        #: 0, or the count over the cap
+        self.prompt = prompt              #: what is really asked
+        self.kilobytes = kilobytes        #: what really leaves
+
+    @property
+    def attached(self):
+        """How many pictures really go, which is what the question says."""
+        return len(self.chosen)
+
+    @property
+    def prepared(self):
+        return [p for _n, p in self.chosen]
+
+
+def _plan(body_html, images, progress=None):
+    """Work out what would be sent, without sending it. Never raises."""
     read = analyse(body_html)
     images = _images_or_embedded(body_html, images)
-    chosen, _cap, _budget, _bad = _select(images)
-    text = "\n".join(read.lines)
-    kilobytes = ai.sent_kilobytes([p for _n, p in chosen], text)
-    return read.words, len(images), kilobytes
+    if images:
+        _say(progress, "Preparing %d picture%s."
+             % (len(images), "" if len(images) == 1 else "s"))
+    chosen, over_cap, over_budget, unreadable = _select(images)
+    truncated = read.words if read.words > WORD_CAP else 0
+    prompt = document_prompt(body_html, pictures_total=len(images),
+                             sent=[n for n, _p in chosen],
+                             unreadable=unreadable,
+                             truncated_words=WORD_CAP if truncated else 0)
+    kilobytes = ai.sent_kilobytes([p for _n, p in chosen], prompt)
+    return _Plan(read.words, len(images), chosen, over_cap, over_budget,
+                 unreadable, truncated, prompt, kilobytes)
+
+
+def payload_plan(body_html, images):
+    """`(words, pictures, attached, kilobytes)`: what a document description
+    would send.
+
+    `words` and `pictures` are the document's own counts, so the question can
+    say "the first 30,000 of its 92,000 words" and "the first 12 of its 20
+    pictures". `attached` is how many pictures really go and `kilobytes` how
+    many kilobytes really leave, the cut text and the whole question
+    included. Runs on a thread: it prepares every picture, which for a
+    dozen photographs is seconds.
+    """
+    plan = _plan(body_html, images)
+    return plan.words, plan.pictures, plan.attached, plan.kilobytes
+
+
+def payload_estimate(body_html, images):
+    """`(words, pictures, kilobytes)`, the three the dialogs asked for first
+    (docs/DECISIONS.md, C2). `payload_plan` adds the number of pictures that
+    will really be attached, which the consent question needs."""
+    words, pictures, _attached, kilobytes = payload_plan(body_html, images)
+    return words, pictures, kilobytes
 
 
 # ---------------------------------------------------------------------------
@@ -702,45 +807,33 @@ def describe_document(body_html, images, provider, model, progress=None):
         return False, ("No key has been set up for %s yet. Put one in on "
                        "the AI page of Preferences, then try again." % who)
     _say(progress, "Reading the document.")
-    read = analyse(body_html)
-    if not read.lines:
+    if not analyse(body_html).lines:
         return False, "The document is empty, so there is nothing to describe."
-    images = _images_or_embedded(body_html, images)
-    if images:
-        _say(progress, "Preparing %d picture%s." % (len(images),
-                                                     "" if len(images) == 1
-                                                     else "s"))
-    chosen, over_cap, over_budget, unreadable = _select(images)
-    truncated = read.words if read.words > WORD_CAP else 0
-    prompt = document_prompt(body_html, pictures_total=len(images),
-                             sent=[n for n, _p in chosen],
-                             unreadable=unreadable,
-                             truncated_words=WORD_CAP if truncated else 0)
-    pictures = [p for _n, p in chosen]
-    kilobytes = ai.sent_kilobytes(pictures, prompt)
+    plan = _plan(body_html, images, progress)
+    pictures = plan.prepared
     _say(progress, "Sending the document to %s: about %s words, %d "
          "picture%s, %s. This can take a minute."
-         % (who, "{:,}".format(min(read.words, WORD_CAP)), len(pictures),
-            "" if len(pictures) == 1 else "s", _size_words(kilobytes)))
-    ok, text = ai.ask(pictures, prompt, provider, key, model,
+         % (who, "{:,}".format(min(plan.words, WORD_CAP)), len(pictures),
+            "" if len(pictures) == 1 else "s", _size_words(plan.kilobytes)))
+    ok, text = ai.ask(pictures, plan.prompt, provider, key, model,
                       timeout=ai.DOCUMENT_TIMEOUT,
                       max_tokens=ai.DOCUMENT_TOKENS)
     if not ok:
         return False, text
     notes = []
-    left = sorted(over_cap + over_budget)
+    left = sorted(plan.over_cap + plan.over_budget)
     if left:
         notes.append("Only %d of the document's %d pictures were sent, so "
                      "pictures %s are not described."
-                     % (len(pictures), len(images), _numbers(left)))
-    if unreadable:
+                     % (len(pictures), plan.pictures, _numbers(left)))
+    if plan.unreadable:
         notes.append("Picture%s %s could not be read and %s not sent."
-                     % ("" if len(unreadable) == 1 else "s",
-                        _numbers(unreadable),
-                        "was" if len(unreadable) == 1 else "were"))
-    if truncated:
+                     % ("" if len(plan.unreadable) == 1 else "s",
+                        _numbers(plan.unreadable),
+                        "was" if len(plan.unreadable) == 1 else "were"))
+    if plan.truncated:
         notes.append("The document has about {:,} words and only the first "
-                     "{:,} were sent.".format(read.words, WORD_CAP))
+                     "{:,} were sent.".format(plan.words, WORD_CAP))
     if notes:
         text = text.rstrip() + "\n\n" + " ".join(notes)
     return True, text
@@ -776,3 +869,412 @@ def copy_drop_deck_key(provider, source_prefix=DROP_DECK_PREFIX,
                        "the key into the box instead." % who)
     return True, ("The %s key from TG Drop Deck is now kept for TG Imprint as "
                   "well, %s." % (who, secrets.redact(found)))
+
+
+# ---------------------------------------------------------------------------
+# Finding the blanks on a page of a form, which is the one thing here that
+# cannot be done any other way
+#
+# Chris Smart, a beta tester, wrote in: the PDF forms he meets in healthcare
+# hold readable text and no fields at all, so he has to print them out and
+# dictate his medical history to a sighted person. `pdfforms.py`, Worker A's,
+# finds candidate blanks from the page itself, from underscore runs, ruled
+# lines, boxes and a colon followed by space. What it cannot do is read a
+# form whose blanks are only white space in a table, or tell which printed
+# words are the label for which blank. That is what this asks a model.
+#
+# Two rules run through all of it.
+#
+# A wrong box is worse than a missing box. The person cannot see that a box
+# landed in the margin, over the printed question, or on the wrong line, and
+# a form filled in through boxes in the wrong places is worse than a form
+# with no boxes at all. So the prompt asks for accuracy over completeness and
+# every number that comes back is checked against the page before it is used.
+#
+# Nothing here writes anything into a file. This returns proposals: a person
+# goes through them and approves them. `docs/DESCRIBER.md` says so in plain
+# words, because it is the promise the whole feature rests on.
+# ---------------------------------------------------------------------------
+
+#: Below this many points on a side there is nothing a person could write in,
+#: so a rectangle that small is a mistake rather than a blank. Four, which is
+#: what `pdfforms.from_ai` also refuses: a box this side of it would be
+#: dropped there anyway, and the count of what was left out would then be
+#: wrong in the one place the user is told about it.
+MIN_BLANK_SIDE = 4.0
+
+#: A single blank is never this much of the page. A rectangle taller than a
+#: quarter of the page, or bigger than a quarter of its area, is the model
+#: having boxed a whole section, a table or the page itself.
+MAX_BLANK_HEIGHT_SHARE = 0.25
+MAX_BLANK_AREA_SHARE = 0.25
+
+#: Two blanks on the same printed line rarely share a top edge to the point.
+#: Within this many points of each other, they are one row and are given left
+#: to right; further apart, the higher one comes first.
+ROW_TOLERANCE = 8.0
+
+_FORM_FIELDS = """You are looking at a picture of one page of a form that \
+somebody is meant to fill in. The person who needs this is blind. They \
+cannot see where the blanks are, and they cannot check your answer against \
+the page. Find the places a person would write in, and say where each one is.
+
+A blank is a place meant to be filled in: a run of underscores, a ruled line \
+with nothing written on it, an empty box, a small square to tick, a row of \
+separate boxes for one character each, or the empty space after a printed \
+label and a colon.
+
+Answer with JSON and nothing else. No sentence before it, no sentence after \
+it, no code fence. The JSON is a list, and each item in the list is an \
+object with exactly these three keys.
+
+"label": the words a person would read next to that blank, copied from the \
+page exactly as they are printed, without the colon. If you cannot see a \
+label, or you are not certain which printed words belong to that blank, give \
+an empty string. Never invent a label and never guess one from the shape of \
+the form.
+
+"rect": four numbers, left, top, right and bottom, giving the rectangle a \
+person would write in.
+
+"kind": one of "text", "checkbox", "choice", "signature", "date".
+
+The four numbers are in page points, the same units as the page size below, \
+and the origin is the TOP LEFT corner of the page: left and right are \
+measured rightwards from the left edge of the page, top and bottom downwards \
+from the top edge, and top is always the smaller of those two. This page is \
+%(width)d points wide and %(height)d points tall. Every number must be \
+inside the page.
+
+Be accurate rather than complete. A box in the wrong place is worse than a \
+blank you left out, because the person cannot see that it landed in the \
+margin or on top of the printed words. If you are not sure a blank is there, \
+or not sure where its edges are, leave it out. Do not box the printed text \
+itself, a heading, a page number, a line of instructions, or anything that \
+has already been filled in.
+
+Give the blanks in reading order, down the page and then across it. If there \
+are no blanks on this page, answer with an empty list."""
+
+_FORM_KNOWN = """
+
+TG Imprint has already found these blanks on this page by looking at the \
+lines, boxes and underscores drawn on it, with the same origin and the same \
+units:
+
+%s
+
+Do not give any of those back. Give only the blanks that are missing from \
+that list. The one exception is a label: if one of them has a label that is \
+plainly wrong for the place it sits in, give that one again with the label \
+corrected and the same rectangle."""
+
+
+def _known_line(item):
+    """One line describing a blank Worker A already found. Takes a Proposal,
+    a plain dictionary or a bare string, because this is handed whatever the
+    caller has."""
+    label, rect = "", None
+    if isinstance(item, str):
+        label = item
+    elif isinstance(item, dict):
+        label = item.get("label") or ""
+        rect = item.get("rect")
+    else:
+        label = getattr(item, "label", "") or ""
+        rect = getattr(item, "rect", None)
+    label = " ".join(str(label).split())
+    numbers = None
+    try:
+        if rect is not None:
+            values = [float(n) for n in list(rect)[:4]]
+            if len(values) == 4:
+                numbers = "[%d, %d, %d, %d]" % tuple(int(round(v))
+                                                     for v in values)
+    except (TypeError, ValueError):
+        numbers = None
+    if label and numbers:
+        return '"%s" at %s' % (label, numbers)
+    if numbers:
+        return "no label, at %s" % numbers
+    return '"%s"' % label if label else ""
+
+
+def form_prompt(page_width, page_height, known=None):
+    """The question asked about one page of a form. `known` is what Worker
+    A's `pdfforms` already found, so the model is asked to add what is
+    missing rather than to list the page again."""
+    prompt = _FORM_FIELDS % {"width": int(round(page_width or 0)),
+                             "height": int(round(page_height or 0))}
+    lines = [_known_line(item) for item in (known or [])]
+    lines = [line for line in lines if line]
+    if lines:
+        prompt += _FORM_KNOWN % "\n".join(lines)
+    return prompt
+
+
+_FENCE = re.compile(r"^```[A-Za-z0-9_-]*\s*\n(.*?)\n?```\s*$", re.DOTALL)
+
+
+def _json_in(reply):
+    """The list of blanks in a reply, or None. Models put a sentence in front
+    of the JSON and a code fence around it however plainly they are told not
+    to, so both are allowed for.
+
+    A reply that IS well formed JSON but is not a list is refused rather than
+    dug into: an answer shaped {"fields": [...]} is a model that did not
+    follow the instruction, and what else it decided to do differently is not
+    known. Only when the reply as a whole is not JSON at all is the first
+    bracketed list in it taken, which is the prose and code fence case.
+    """
+    text = (reply or "").strip()
+    fenced = _FENCE.match(text)
+    if fenced:
+        text = fenced.group(1).strip()
+    try:
+        got = json.loads(text)
+    except Exception:
+        got = None
+    else:
+        return got if isinstance(got, list) else None
+    # A bracket scan rather than a regular expression, because a label can
+    # hold a bracket and a regular expression cannot count. Strings are
+    # skipped over so a bracket inside one does not close the list.
+    start = text.find("[")
+    while start != -1:
+        depth = 0
+        in_string = False
+        escaped = False
+        for at in range(start, len(text)):
+            character = text[at]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    in_string = False
+                continue
+            if character == '"':
+                in_string = True
+            elif character == "[":
+                depth += 1
+            elif character == "]":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        got = json.loads(text[start:at + 1])
+                    except Exception:
+                        break
+                    if isinstance(got, list):
+                        return got
+                    break
+        start = text.find("[", start + 1)
+    return None
+
+
+_KINDS = ("text", "checkbox", "choice", "signature", "date")
+
+
+def _one_box(item, page_width, page_height):
+    """One item from the model's list as `{"label", "rect", "kind"}`, or None
+    when it cannot be trusted on the page.
+
+    Nothing here believes anything it is given. The numbers are put in order,
+    clamped to the page, and thrown away if what is left has no area or is
+    far too big to be a blank a person writes in.
+    """
+    if not isinstance(item, dict):
+        return None
+    try:
+        values = [float(n) for n in list(item.get("rect") or [])[:4]]
+    except (TypeError, ValueError):
+        return None
+    if len(values) != 4:
+        return None
+    if any(v != v or v in (float("inf"), float("-inf")) for v in values):
+        return None
+    x0, y0, x1, y1 = values
+    if x1 < x0:
+        x0, x1 = x1, x0
+    if y1 < y0:
+        y0, y1 = y1, y0
+    x0 = min(max(x0, 0.0), page_width)
+    x1 = min(max(x1, 0.0), page_width)
+    y0 = min(max(y0, 0.0), page_height)
+    y1 = min(max(y1, 0.0), page_height)
+    if (x1 - x0) < MIN_BLANK_SIDE or (y1 - y0) < MIN_BLANK_SIDE:
+        return None
+    if (y1 - y0) > page_height * MAX_BLANK_HEIGHT_SHARE:
+        return None
+    if (x1 - x0) * (y1 - y0) > page_width * page_height * MAX_BLANK_AREA_SHARE:
+        return None
+    label = item.get("label")
+    label = " ".join(str(label).split()) if label is not None else ""
+    if len(label) > 120:
+        label = label[:120].rstrip()
+    kind = str(item.get("kind") or "").strip().lower()
+    if kind not in _KINDS:
+        kind = "text"
+    return {"label": label, "rect": [x0, y0, x1, y1], "kind": kind}
+
+
+def _reading_order(boxes, tolerance=ROW_TOLERANCE):
+    """Down the page, then across it. Rows are grouped within `tolerance`
+    points, so two blanks on one printed line come back left to right even
+    when their top edges differ by a point or two."""
+    left = sorted(boxes, key=lambda b: (b["rect"][1], b["rect"][0]))
+    out = []
+    while left:
+        top = left[0]["rect"][1]
+        row = [b for b in left if b["rect"][1] - top <= tolerance]
+        left = left[len(row):]
+        out.extend(sorted(row, key=lambda b: b["rect"][0]))
+    return out
+
+
+#: Said when the reply is not the list that was asked for. The provider's
+#: name goes in front of it, so it reads "Gemini, from Google answered, but
+#: not with the list of blanks TG Imprint asked for".
+_BAD_SHAPE = ("answered, but not with the list of blanks TG Imprint asked "
+              "for, so nothing has been proposed. Try again, or try another "
+              "model on the AI page of Preferences.")
+
+_NOT_A_PAGE = ("The size of this page is not known, so there is nowhere to "
+               "put a box. Nothing has left this machine.")
+
+
+def _boxes_from(got, page_width, page_height):
+    """The model's list turned into boxes that are really on the page, in
+    reading order."""
+    boxes = []
+    for item in got:
+        box = _one_box(item, page_width, page_height)
+        if box is not None:
+            boxes.append(box)
+    return _reading_order(boxes)
+
+
+def form_boxes(reply, page_width, page_height):
+    """The model's reply as `(ok, boxes or sentence)`, checked against the
+    page. `boxes` are `{"label", "rect", "kind"}` in reading order.
+
+    Never raises: a reply that is not JSON, is JSON but not a list, or is a
+    list of things that are not boxes all come back as a sentence or an empty
+    list rather than an exception.
+    """
+    try:
+        page_width = float(page_width)
+        page_height = float(page_height)
+    except (TypeError, ValueError):
+        return False, _NOT_A_PAGE
+    if page_width <= 0 or page_height <= 0:
+        return False, _NOT_A_PAGE
+    got = _json_in(reply)
+    if got is None:
+        return False, _BAD_SHAPE
+    return True, _boxes_from(got, page_width, page_height)
+
+
+def page_kilobytes(page_image):
+    """How big a picture of one page would be once prepared, so the consent
+    question can say so. Zero when the picture cannot be prepared."""
+    prepared = ai.prepare_picture(page_image) if page_image else None
+    if prepared is None:
+        return 0.0
+    return ai.sent_kilobytes([prepared])
+
+
+def find_form_fields(page_image, page_index, page_width, page_height,
+                     provider, model, known=None, progress=None):
+    """Ask a model that can see where the blanks on this page of a form are.
+
+    `page_image` is the bytes of a picture of the page, `page_index` which
+    page it is, counted the way `pdfforms` counts, which is 1 for the first
+    page, and `page_width` and `page_height` its size IN POINTS, which is
+    what the model is asked to answer in. `known` is what
+    `pdfforms.py` already found from the page itself, so the model is asked
+    to add what is missing rather than to list the page again; it may be
+    Proposal objects, dictionaries or labels.
+
+    Returns `(True, [Proposal, ...])` in reading order, or `(False,
+    sentence)`. **Never raises**, never touches the window, and must not be
+    called on the window thread: the caller puts it on one of its own.
+
+    Consent is the caller's job and has already been given when this is
+    called. A page of a form somebody sent is somebody else's document, so it
+    goes through the consent path as an imported picture and asks EVERY time:
+    `consent_needed("form page", True, 1)` is always true, and
+    `consent_question("form page", ...)` is the wording.
+
+    What comes back is a proposal and nothing more. Nothing is written into
+    the file here or by the dialog; a person goes through the boxes and
+    approves them.
+    """
+    provider = (provider or "").strip().lower()
+    who = ai.PROVIDER_NAMES.get(provider, provider)
+    if not page_image:
+        return False, ("There is no picture of the page to look at, so "
+                       "nothing has left this machine.")
+    try:
+        page_width = float(page_width)
+        page_height = float(page_height)
+    except (TypeError, ValueError):
+        return False, _NOT_A_PAGE
+    if page_width <= 0 or page_height <= 0:
+        return False, _NOT_A_PAGE
+    key = key_for(provider)
+    if not key:
+        return False, ("No key has been set up for %s yet. Put one in on "
+                       "the AI page of Preferences, then try again." % who)
+    prepared = ai.prepare_picture(page_image)
+    if prepared is None:
+        return False, ("The picture of the page could not be prepared for "
+                       "sending, so nothing has left this machine.")
+    _say(progress, "Asking %s where the blanks on this page are. This "
+                   "usually takes a few seconds." % who)
+    ok, reply = ai.ask([prepared], form_prompt(page_width, page_height, known),
+                       provider, key, model, timeout=ai.TIMEOUT,
+                       max_tokens=ai.FORM_TOKENS)
+    if not ok:
+        return False, reply
+    got = _json_in(reply)
+    if got is None:
+        return False, "%s %s" % (who, _BAD_SHAPE)
+    boxes = _boxes_from(got, page_width, page_height)
+    asked_for = len(got)
+    if not boxes:
+        if asked_for:
+            return False, ("%s proposed %d blank%s, but none of them was on "
+                           "the page, so none has been used. Try again, or "
+                           "add the fields yourself."
+                           % (who, asked_for, "" if asked_for == 1 else "s"))
+        return False, ("%s found no blanks it was sure of on this page. "
+                       "Nothing has been proposed, and you can still add a "
+                       "field yourself." % who)
+    if asked_for > len(boxes):
+        _say(progress, "%d of the %d blanks %s proposed were not on the "
+                       "page and have been left out."
+             % (asked_for - len(boxes), asked_for, who))
+    # pdfforms is imported HERE and nowhere else, and only for this one call,
+    # so this module loads whether or not Worker A's file is in place yet.
+    try:
+        from . import pdfforms
+        proposals = list(pdfforms.from_ai(
+            page_index, [{"label": b["label"], "rect": list(b["rect"]),
+                          "kind": b["kind"]} for b in boxes]))
+    except Exception:
+        return False, ("TG Imprint could not turn the blanks into fields on "
+                       "the page. Nothing has been changed in your form.")
+    # `kind` goes in the dictionary because `from_ai` takes one and checks it
+    # against the kinds a PDF field can actually be. A model is asked for
+    # five kinds, because "date" and "signature" tell it what it is looking
+    # at and make the answer better; `from_ai` keeps text, multiline text and
+    # checkbox and turns the rest into text, which is what a date or a
+    # signature line is on the page anyway.
+    if not proposals:
+        return False, ("%s proposed %d blank%s, but none of them could be "
+                       "made into a field on the page. Try again, or add the "
+                       "fields yourself."
+                       % (who, len(boxes), "" if len(boxes) == 1 else "s"))
+    return True, proposals

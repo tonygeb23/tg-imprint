@@ -1,11 +1,15 @@
 """Asking a model that can see, on the user's own key, and nothing more.
 
 TG Imprint's copy of TG Drop Deck's vision.py, which shipped on 8 September
-2026 against all three services. The transport (`_request`, the three
-provider functions and their readers), the error sentences in `_trouble`,
-`list_models` and its diggers, `providers_with_keys` and `best_provider`
-are kept with their shape, so a fix found in Drop Deck can be carried
-across by copying the function. What is different is the job. Drop Deck
+2026 against all three services. The transport (`_request` and the three
+provider functions), the error sentences in `_trouble`, `list_models` and
+its diggers, `providers_with_keys` and `best_provider` are kept with their
+shape, so a fix found in Drop Deck can be carried across by copying the
+function. Drop Deck's single picture builders are NOT kept beside them:
+they were dead code here, nothing called them, and a fix pasted into a
+function nothing calls fixes nothing. Where this file's builders differ
+from Drop Deck's, the difference is written down beside the code and in
+docs/DESCRIBER.md. What is different is the job. Drop Deck
 looks at a camera before a show and wants speed. TG Imprint writes the
 alternative text for a picture that will sit in a distributed file for
 ever, and describes a whole document to somebody who cannot see it, so it
@@ -89,13 +93,28 @@ TIMEOUT = 90.0
 #: under half a minute for the sample document; a pro model can take longer.
 DOCUMENT_TIMEOUT = 240.0
 
-#: Room for the answer. A ceiling and not a target: nothing is billed for
-#: tokens that are not written. It is high because on the current Claude
-#: models thinking happens inside this budget before the answer does, and a
-#: Gemini model does the same; Drop Deck measured one Gemini answer stopping
-#: after eighteen characters under a low ceiling.
-IMAGE_TOKENS = 4000
+#: Room for the answer. A ceiling and not a target: a ceiling only allows,
+#: it does not spend. It is high because thinking happens INSIDE this budget
+#: before the answer does. On claude-opus-5, the Anthropic default here,
+#: thinking is on unless it is switched off, so a two sentence description
+#: can be preceded by thousands of tokens of thought; a Gemini model does the
+#: same, and Drop Deck measured one Gemini answer stopping after eighteen
+#: characters under a low ceiling. Eight thousand rather than four for the
+#: picture case, because four was measured to be within reach of a thinking
+#: model on a dense chart, and a cut off description is worse than a slow one.
+#:
+#: Switching thinking off would be the other fix and is deliberately not
+#: done: the request would then have to carry a per provider, per model
+#: setting, and the Model box takes any name the user types, including names
+#: that refuse the setting. Instead `_cut_off` reads the provider's own stop
+#: reason and says so, which works whatever is in the box.
+IMAGE_TOKENS = 8000
 DOCUMENT_TOKENS = 16000
+
+#: Finding the blanks on a page of a form comes back as JSON, one object per
+#: blank. A dense form can carry forty of them, which is a few thousand
+#: tokens of JSON, and the same thinking sits in front of it.
+FORM_TOKENS = 8000
 
 #: The picture is scaled down before it goes. 1,600 wide, not Drop Deck's
 #: 1,024: the demanding case here is a chart's axis labels or the small text
@@ -271,31 +290,25 @@ def sent_kilobytes(pictures, text=""):
 # ---------------------------------------------------------------------------
 # The three providers. Same question, three shapes of envelope.
 #
-# The single picture functions are Drop Deck's, verbatim, so a fix there can
-# be pasted here. The `_parts` function beside each is the same envelope
-# generalised to one text part plus any number of pictures of either type,
-# which is what this app sends; when one of a pair changes, change both.
-# tests/test_ai.py checks that each pair agrees on its address and headers.
+# One builder each, taking one text part plus any number of pictures of
+# either type, which is what this app sends. Drop Deck's single picture
+# builders were carried across at first and deleted on 9 September 2026: ask
+# never called them, so they were three copies of the envelope that no test
+# could catch drifting. tests/test_ai.py now checks each builder against the
+# literal address and headers instead, which is what a copy of them was
+# really being kept for.
+#
+# Two things here differ from Drop Deck and are worth carrying BACK to it:
+# `_read_anthropic` joins the text blocks rather than taking block zero,
+# because a thinking block comes first; and `_openai_parts` sends
+# max_completion_tokens, which every current OpenAI model takes where the
+# older max_tokens is refused by the reasoning models.
 # ---------------------------------------------------------------------------
 
 def _request(url, headers, body):
     data = json.dumps(body).encode("utf-8")
     return urllib.request.Request(url, data=data, headers=headers,
                                   method="POST")
-
-
-def _anthropic(model, key, jpeg, prompt):
-    body = {"model": model, "max_tokens": 700,
-            "messages": [{"role": "user", "content": [
-                {"type": "image", "source": {
-                    "type": "base64", "media_type": "image/jpeg",
-                    "data": base64.b64encode(jpeg).decode("ascii")}},
-                {"type": "text", "text": prompt}]}]}
-    request = _request("https://api.anthropic.com/v1/messages",
-                       {"content-type": "application/json",
-                        "x-api-key": key,
-                        "anthropic-version": "2023-06-01"}, body)
-    return request, lambda got: got["content"][0]["text"]
 
 
 def _anthropic_parts(model, key, pictures, prompt, max_tokens=IMAGE_TOKENS):
@@ -317,24 +330,11 @@ def _anthropic_parts(model, key, pictures, prompt, max_tokens=IMAGE_TOKENS):
 def _read_anthropic(got):
     # The text blocks, joined. On the current Claude models thinking is on
     # unless it is switched off, and a thinking block comes FIRST in the
-    # answer, so taking block zero would hand back an empty thought. This
-    # is the one place the `_parts` reader knowingly differs from the
-    # single picture reader above, and it is a fix worth carrying back.
+    # answer, so taking block zero, which is what Drop Deck does, would hand
+    # back an empty thought. That is the fix worth carrying back.
     texts = [block.get("text", "") for block in got["content"]
              if block.get("type") == "text"]
     return "\n".join(t for t in texts if t)
-
-
-def _openai(model, key, jpeg, prompt):
-    url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")
-    body = {"model": model, "max_tokens": 700,
-            "messages": [{"role": "user", "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": url}}]}]}
-    request = _request("https://api.openai.com/v1/chat/completions",
-                       {"content-type": "application/json",
-                        "authorization": "Bearer " + key}, body)
-    return request, lambda got: got["choices"][0]["message"]["content"]
 
 
 def _openai_parts(model, key, pictures, prompt, max_tokens=IMAGE_TOKENS):
@@ -356,27 +356,9 @@ def _openai_parts(model, key, pictures, prompt, max_tokens=IMAGE_TOKENS):
     return request, lambda got: got["choices"][0]["message"]["content"]
 
 
-def _google(model, key, jpeg, prompt):
-    body = {"contents": [{"parts": [
-        {"text": prompt},
-        {"inline_data": {"mime_type": "image/jpeg",
-                         "data": base64.b64encode(jpeg).decode("ascii")}}]}],
-        # A ceiling, because a thinking model spends this budget on thinking
-        # FIRST and then has nothing left to answer with. Measured: without
-        # it, one model returned the eighteen characters "There is no camera"
-        # and stopped mid sentence.
-        "generationConfig": {"maxOutputTokens": 1500}}
+def _google_parts(model, key, pictures, prompt, max_tokens=IMAGE_TOKENS):
     # The key goes in a header rather than the query string, so it cannot end
     # up in a proxy log or a crash report.
-    request = _request(
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        "%s:generateContent" % model,
-        {"content-type": "application/json", "x-goog-api-key": key}, body)
-    return request, lambda got: (
-        got["candidates"][0]["content"]["parts"][0]["text"])
-
-
-def _google_parts(model, key, pictures, prompt, max_tokens=IMAGE_TOKENS):
     parts = [{"text": prompt}]
     for mime, data in pictures:
         parts.append({"inline_data": {
@@ -399,7 +381,6 @@ def _read_google(got):
     return "\n".join(t for t in texts if t)
 
 
-_BUILDERS = {"anthropic": _anthropic, "openai": _openai, "google": _google}
 _PART_BUILDERS = {"anthropic": _anthropic_parts, "openai": _openai_parts,
                   "google": _google_parts}
 
@@ -478,6 +459,42 @@ def _declined(got, provider):
     return ""
 
 
+def _cut_off(got, provider):
+    """A sentence when the answer stopped because it ran out of room, or an
+    empty string when it finished.
+
+    This matters more here than in Drop Deck. On the current models thinking
+    happens inside `max_tokens` before the answer does, so a model can spend
+    the budget thinking and hand back a sentence that stops in the middle.
+    Nobody reading it aloud can see that it stopped, and `tidy_alt` would
+    make it look finished, so a half answer must never be offered as
+    alternative text. Each provider says so in its own word: Anthropic
+    `stop_reason` max_tokens, OpenAI `finish_reason` length, Google
+    `finishReason` MAX_TOKENS.
+    """
+    who = PROVIDER_NAMES.get(provider, provider)
+    said = ("%s ran out of room before it finished the answer, so what came "
+            "back stops in the middle and has not been used. Try again. If "
+            "it keeps happening, put a quicker model in the Model box on the "
+            "AI page of Preferences: a model that thinks before it answers "
+            "can spend the whole answer budget on thinking." % who)
+    try:
+        if provider == "google":
+            candidates = got.get("candidates") or []
+            if candidates and candidates[0].get("finishReason") == "MAX_TOKENS":
+                return said
+        elif provider == "anthropic":
+            if got.get("stop_reason") == "max_tokens":
+                return said
+        elif provider == "openai":
+            choices = got.get("choices") or []
+            if choices and choices[0].get("finish_reason") == "length":
+                return said
+    except Exception:
+        pass
+    return ""
+
+
 def ask(pictures, prompt, provider, key, model="", timeout=TIMEOUT,
         max_tokens=IMAGE_TOKENS):
     """One question, any number of prepared pictures, one answer.
@@ -517,6 +534,9 @@ def ask(pictures, prompt, provider, key, model="", timeout=TIMEOUT,
     declined = _declined(got, provider)
     if declined:
         return False, declined
+    cut = _cut_off(got, provider)
+    if cut:
+        return False, cut
     try:
         text = (read(got) or "").strip()
     except Exception:

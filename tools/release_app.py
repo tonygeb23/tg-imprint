@@ -54,6 +54,15 @@ CHANNEL = "win"
 # Tony's voice and is listed in docs/STRINGS.md for his approval before it
 # ships.
 NOTES = {
+    "0.2.0": ("You can fill in PDF forms now, from a list rather than a page: "
+              "every field with its label, its kind and what is in it. If the "
+              "form has no fields at all, which is most of the ones that come "
+              "from a hospital or a council, it finds the blanks and offers "
+              "them to you before it writes anything. There are low vision "
+              "settings too: text size that sticks, a dark or yellow on black "
+              "page, a caret you can see, bolder text and wider line spacing, "
+              "all on screen only, and the PDF still comes out black on white. "
+              "The Preferences tabs say what they are, which they did not."),
     "0.1.0": ("The first open beta. Write a document with headings, lists, "
               "links and pictures, and export a PDF that screen readers can "
               "read properly. Every picture needs a description, and Claude, "

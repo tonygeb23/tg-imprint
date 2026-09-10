@@ -30,6 +30,11 @@ No em dashes or en dashes anywhere in this file. Tony's rule.
   order, what each picture shows, and anything an accessibility check
   would flag. The answer lands in a read-only field with a Copy button.
   It is never written into the document at all.
+- **Find the blanks on this page** sends a picture of ONE page of a form
+  that has no fields in it, and comes back with a list of the places a
+  person would write in, each with the label printed beside it. Every box
+  is a proposal you go through and approve. Nothing is written into the
+  form until you accept it. There is a section on this below.
 
 ## What leaves the machine, and when
 
@@ -45,6 +50,7 @@ often, follows where the picture came from (docs/DECISIONS.md, decision
 | A picture that came in with an imported document (a PDF, a Word file, a web page somebody sent you) | The same | Every time. That is somebody else's document leaving the machine, and you cannot look at the picture to check what is in it |
 | Several pictures at once | Each picture, scaled | Every time |
 | The whole document | Its text with the structure marked (headings with their levels, each paragraph, each list item, each link with its address, each table row, each picture with the description it already has), plus up to twelve pictures, scaled | Every time. The question says how many words, how many pictures and how many kilobytes |
+| One page of a form, to find the blanks in it | One picture of that one page, scaled the same way, and the question below. Not the rest of the form, and not the file | Every time. A form somebody sent you is their document. The question says which page, who it goes to and how big it is |
 | The Test button on the AI page of Preferences | One 96 by 64 pixel picture TG Imprint draws itself, a red circle on white, about a kilobyte, and a one-line question. Nothing of yours | It says what it sends on the page; no separate question |
 | The Get the list button | Only your key, to the provider's own list of models | No question; nothing of yours leaves |
 
@@ -84,6 +90,65 @@ text. Over the cap the first twelve go, the question the model is asked
 says which pictures are attached, and the answer ends with a sentence
 saying which were not described. The text is capped at thirty thousand
 words the same way, and the answer says so.
+
+## Finding the blanks on a page of a form
+
+Chris Smart, one of the beta testers, wrote in about the thing this is for.
+The PDF forms he meets in healthcare hold perfectly readable text and no
+fields at all: the blanks are underscores, ruled lines and empty boxes, drawn
+on the page and meaning nothing to a screen reader. So he prints the form out
+and dictates his medical history to a sighted person.
+
+TG Imprint finds what it can from the page itself, without asking anybody:
+runs of underscores, ruled lines, boxes, and a printed label followed by a
+colon and space. That covers a lot of forms and none of your data leaves the
+machine for it. What it cannot do is read a form whose blanks are only white
+space in a table, and it often cannot tell which printed words are the label
+for which blank. That is what this command asks a model.
+
+**What it sends: one picture of one page.** Not the whole form, not the file,
+not the pages either side. The page is rendered, scaled to at most 1,600
+pixels wide like every other picture here, and sent with the question printed
+below. When TG Imprint has already found blanks on that page, their labels
+and rectangles go too, so the model is asked to add what is missing rather
+than to list the page again.
+
+**When it asks: every time.** A form somebody sent you is their document, and
+the same rule applies to it as to a picture that came in with an imported
+file. There is no "do not ask me again" for this, and there never will be.
+The question names the page, the provider and the size before anything moves.
+
+**The boxes are a proposal. They are never written into your file.** This is
+the part to be clear about, because you cannot see where a box landed. What
+comes back is a list you go through: each blank with the label the model read
+beside it, its size and where it sits on the page. Nothing is put into the
+form until you accept it, and you can change a label, move a box or throw one
+away first. TG Imprint never writes a field into a file because a model
+proposed one.
+
+Every number that comes back is checked against the page before you are even
+shown it. The prompt says the page size and says the origin is the top left
+corner, and then the app assumes the model got it wrong anyway: a rectangle
+given back to front is put in order, one that runs off the edge is trimmed to
+the page, one with no area is dropped, and one far too big to be a blank a
+person writes in, taller than a quarter of the page or bigger than a quarter
+of its area, is dropped as well. What is left is sorted into reading order,
+down the page and then across it. A model that answers with anything but the
+list it was asked for is refused outright rather than mined for whatever can
+be salvaged.
+
+The model is asked which of five kinds each blank is: text, checkbox,
+choice, signature or date. Naming a date or a signature line makes the answer
+better even though a PDF has no such field: `pdfforms.from_ai` keeps text,
+multiline text and checkbox and turns the other three into text, which is
+what a date or a signature line is on the page anyway.
+
+The prompt asks for accuracy over completeness on purpose, and says why in
+the words the model reads: a box in the wrong place is worse than a box left
+out, because the person cannot see that it landed in the margin. It is told
+to leave out anything it is not sure of, and to give an empty label rather
+than guess one. A blank with no label is honest and you can name it yourself;
+a blank labelled "Date of birth" that is really the insurance number is not.
 
 ## Getting a key
 
@@ -370,6 +435,68 @@ by AI and has not been checked by a sighted person)", and one recovered
 from a PDF by "(this description was recovered from a file and has not
 been checked)".
 
+### Finding the blanks on a page of a form
+
+The page size in the fifth paragraph is filled in from the page itself; the
+rest is sent exactly as it reads here.
+
+> You are looking at a picture of one page of a form that somebody is meant
+> to fill in. The person who needs this is blind. They cannot see where the
+> blanks are, and they cannot check your answer against the page. Find the
+> places a person would write in, and say where each one is.
+>
+> A blank is a place meant to be filled in: a run of underscores, a ruled
+> line with nothing written on it, an empty box, a small square to tick, a
+> row of separate boxes for one character each, or the empty space after a
+> printed label and a colon.
+>
+> Answer with JSON and nothing else. No sentence before it, no sentence
+> after it, no code fence. The JSON is a list, and each item in the list is
+> an object with exactly these three keys.
+>
+> "label": the words a person would read next to that blank, copied from the
+> page exactly as they are printed, without the colon. If you cannot see a
+> label, or you are not certain which printed words belong to that blank,
+> give an empty string. Never invent a label and never guess one from the
+> shape of the form.
+>
+> "rect": four numbers, left, top, right and bottom, giving the rectangle a
+> person would write in.
+>
+> "kind": one of "text", "checkbox", "choice", "signature", "date".
+>
+> The four numbers are in page points, the same units as the page size below,
+> and the origin is the TOP LEFT corner of the page: left and right are
+> measured rightwards from the left edge of the page, top and bottom
+> downwards from the top edge, and top is always the smaller of those two.
+> This page is 612 points wide and 792 points tall. Every number must be
+> inside the page.
+>
+> Be accurate rather than complete. A box in the wrong place is worse than a
+> blank you left out, because the person cannot see that it landed in the
+> margin or on top of the printed words. If you are not sure a blank is
+> there, or not sure where its edges are, leave it out. Do not box the
+> printed text itself, a heading, a page number, a line of instructions, or
+> anything that has already been filled in.
+>
+> Give the blanks in reading order, down the page and then across it. If
+> there are no blanks on this page, answer with an empty list.
+
+When TG Imprint has already found blanks on the page, this is added, with one
+line for each of them:
+
+> TG Imprint has already found these blanks on this page by looking at the
+> lines, boxes and underscores drawn on it, with the same origin and the same
+> units:
+>
+> "Patient name" at [72, 120, 300, 134]
+> no label, at [400, 150, 500, 164]
+>
+> Do not give any of those back. Give only the blanks that are missing from
+> that list. The one exception is a label: if one of them has a label that is
+> plainly wrong for the place it sits in, give that one again with the label
+> corrected and the same rectangle.
+
 ### The Test button
 
 > In at most ten words, say what shape and colour is in this picture.
@@ -390,24 +517,49 @@ in a minute. No internet says to check the machine is online and that
 nothing in the document has changed. A content filter that declines to
 describe a picture says so, and that nothing is wrong with the key.
 
+One failure is worth spelling out. On the current models a model thinks
+before it answers, and the thinking is spent out of the same budget as the
+answer, so a model can use the lot thinking and hand back a sentence that
+stops in the middle. Nobody listening can hear where an answer stopped, and
+the tidying that turns an answer into alternative text would make a half
+sentence look finished. So TG Imprint reads the reason each provider gives
+for stopping, and an answer that ran out of room is refused with a sentence
+saying so rather than offered to you. The budget was raised to eight thousand
+tokens for a picture at the same time, which costs nothing when it is not
+used.
+
 ## For whoever maintains this
 
 - `tgimprint/ai.py` is TG Drop Deck's `vision.py` with the camera and
-  screen material removed. The transport, the three single-picture
-  builders, `_trouble`, `list_models`, `providers_with_keys` and
-  `best_provider` keep their shape so a fix in Drop Deck can be pasted
-  across. Beside each single-picture builder is a `_parts` builder that
-  takes one text part plus any number of pictures of either type; when
-  one of a pair changes, change both, and `tests/test_ai.py` checks the
-  pairs agree on their address and headers.
-- Two things in the `_parts` builders are worth carrying back to Drop
-  Deck. The Anthropic reader joins the text blocks instead of taking
-  block zero, because on the current Claude models thinking is on unless
-  switched off and a thinking block comes first; Drop Deck's reader would
-  report "answered in a shape this app did not expect" on such an
-  answer. The OpenAI builder sends `max_completion_tokens`, which every
-  current OpenAI model takes, where `max_tokens` is refused by the
-  reasoning models a user can type into the box.
+  screen material removed. The transport, `_trouble`, `list_models`,
+  `providers_with_keys` and `best_provider` keep their shape so a fix in
+  Drop Deck can be pasted across. Drop Deck's three single-picture
+  builders were carried across at first and deleted on 9 September 2026:
+  `ask` never called them, so they were a second copy of each envelope
+  that nothing could catch drifting, and a fix pasted into a function
+  nothing calls fixes nothing. What they were really being kept for is
+  now done properly, by `tests/test_ai.py` checking each builder against
+  the literal address and headers.
+- Three things here are worth carrying back to Drop Deck. The Anthropic
+  reader joins the text blocks instead of taking block zero, because on
+  the current Claude models thinking is on unless switched off and a
+  thinking block comes first; Drop Deck's reader would report "answered
+  in a shape this app did not expect" on such an answer. The OpenAI
+  builder sends `max_completion_tokens`, which every current OpenAI model
+  takes, where `max_tokens` is refused by the reasoning models a user can
+  type into the box. And `_cut_off` reads each provider's own stop reason
+  and refuses an answer that ran out of room, which is the same fault as
+  the thinking block seen from the other end.
+- The picture preview in the describe dialog is decoded on a thread.
+  `preview_data` is Pillow only and does the slow half; `bitmap_from`
+  wraps the result in a `wx.Bitmap` and must stay on the window thread,
+  because a wx image is a window object. A 4,000 by 3,000 photograph took
+  165 to 179 milliseconds to decode and scale, measured 9 September 2026,
+  and that used to be time in which the dialog did not exist yet.
+- `describe.find_form_fields` imports `pdfforms` inside itself, and only
+  for `from_ai`. That is deliberate: the describer loads whether or not
+  the form file is in place, and nothing about a form is imported by an
+  app that never opens one.
 - `tgimprint/describe.py` holds the prompts, the consent rules, the
   outline, the picture cap and the two public calls. `describe_image`
   and `describe_document` read the key themselves through `key_for`, so
@@ -417,7 +569,7 @@ describe a picture says so, and that nothing is wrong with the key.
   finishes on its own and the dialog, having moved its generation
   counter on, drops the answer. That is the whole of the mechanism, and
   it is what makes the dialogs testable without a modal loop.
-- `python tests/test_ai.py` and `python tests/test_describe.py` are the
-  checks. The second sends `tests/fixtures/circle.png` to Gemini once
+- `python tests/test_ai.py`, `python tests/test_describe.py` and `python
+  tests/test_formfind.py` are the checks. The second sends `tests/fixtures/circle.png` to Gemini once
   on the Drop Deck key if it is on the machine, and skips that check
   otherwise, saying so.

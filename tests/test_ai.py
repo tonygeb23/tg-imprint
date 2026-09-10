@@ -64,33 +64,48 @@ def size_of(data):
 
 
 # ---------------------------------------------------------------------------
-head("The three envelopes, one picture (Drop Deck's builders, verbatim)")
+head("The three envelopes go to the addresses and headers written here")
+
+# These are the literal addresses and headers, not a comparison against
+# another copy of the same code. Drop Deck's single picture builders used to
+# live beside these and the pair was checked against each other; they were
+# dead code (`ask` never called them), and two copies agreeing proves nothing
+# about either. If a provider moves its address or its header, this section
+# is what has to change, deliberately.
 
 jpeg = jpeg_bytes(640, 360)
-addresses = {}
-for name, builder in (("anthropic", ai._anthropic), ("openai", ai._openai),
-                      ("google", ai._google)):
-    request, read = builder("m", "SECRETKEY", jpeg, "ask")
-    addresses[name] = request.full_url
-    check("%s posts" % name, request.method == "POST")
+addresses = {
+    "anthropic": "https://api.anthropic.com/v1/messages",
+    "openai": "https://api.openai.com/v1/chat/completions",
+    "google": "https://generativelanguage.googleapis.com/v1beta/models/"
+              "m:generateContent",
+}
+headers_wanted = {
+    "anthropic": {"Content-type": "application/json",
+                  "X-api-key": "SECRETKEY",
+                  "Anthropic-version": "2023-06-01"},
+    "openai": {"Content-type": "application/json",
+               "Authorization": "Bearer SECRETKEY"},
+    "google": {"Content-type": "application/json",
+               "X-goog-api-key": "SECRETKEY"},
+}
+check("no single picture builder is left to drift out of step with the "
+      "one that is used",
+      not any(hasattr(ai, name) for name in ("_anthropic", "_openai",
+                                             "_google", "_BUILDERS")))
+for name, builder in (("anthropic", ai._anthropic_parts),
+                      ("openai", ai._openai_parts),
+                      ("google", ai._google_parts)):
+    request, read = builder("m", "SECRETKEY", [("image/jpeg", jpeg)], "ask")
+    check("%s posts to the address written here" % name,
+          request.method == "POST" and request.full_url == addresses[name],
+          request.full_url)
+    check("%s sends exactly the headers written here" % name,
+          dict(request.headers) == headers_wanted[name], dict(request.headers))
     check("%s sends the key in a HEADER, never in the address" % name,
           "SECRETKEY" not in request.full_url
           and "SECRETKEY" in str(request.headers), request.full_url[:52])
-    check("%s says it is JSON" % name,
-          "json" in str(request.headers).lower())
-    body = json.loads(request.data.decode("utf-8"))
-    if name == "anthropic":
-        first = body["messages"][0]["content"][0]
-        check("anthropic carries the picture as a base64 JPEG block",
-              first["type"] == "image"
-              and first["source"]["media_type"] == "image/jpeg")
-    elif name == "openai":
-        image = body["messages"][0]["content"][1]["image_url"]["url"]
-        check("openai carries the picture as a data address",
-              image.startswith("data:image/jpeg;base64,"))
-    else:
-        part = body["contents"][0]["parts"][1]["inline_data"]
-        check("google carries the picture inline", part["mime_type"] == "image/jpeg")
+    if name == "google":
         check("google's model is in the path, not the query",
               "/models/m:generateContent" in request.full_url
               and "?" not in request.full_url)
@@ -105,9 +120,9 @@ for name, builder in (("anthropic", ai._anthropic_parts),
                       ("openai", ai._openai_parts),
                       ("google", ai._google_parts)):
     request, read = builder("m", "SECRETKEY", pictures, "the question", 1234)
-    check("%s multi-part posts to the same address as the single builder"
-          % name, request.full_url == addresses[name], request.full_url[:52])
-    check("%s multi-part keeps the key out of the address" % name,
+    check("%s with several pictures posts to the same address" % name,
+          request.full_url == addresses[name], request.full_url[:52])
+    check("%s with several pictures keeps the key out of the address" % name,
           "SECRETKEY" not in request.full_url
           and "SECRETKEY" in str(request.headers))
     body = json.loads(request.data.decode("utf-8"))
@@ -123,10 +138,8 @@ for name, builder in (("anthropic", ai._anthropic_parts),
               content[3]["text"] == "the question")
         check("anthropic: the answer budget is the one asked for",
               body["max_tokens"] == 1234)
-        check("anthropic: the version header matches the single builder",
-              request.headers.get("Anthropic-version")
-              == ai._anthropic("m", "k", jpeg, "q")[0].headers.get(
-                  "Anthropic-version"))
+        check("anthropic: the version header is the one written here",
+              request.headers.get("Anthropic-version") == "2023-06-01")
     elif name == "openai":
         content = body["messages"][0]["content"]
         kinds = [c["type"] for c in content]
@@ -172,14 +185,19 @@ check("anthropic: a thinking block first does not hide the text",
 plain = {"content": [{"type": "text", "text": "A yellow circle."}]}
 check("anthropic: a plain answer reads the same",
       ai._read_anthropic(plain) == "A yellow circle.")
-_r, single_read = ai._anthropic("m", "k", jpeg, "q")
+def block_zero(got):
+    """What Drop Deck's reader does, kept here as a check and not as code
+    this app can call: it is the fault the reader above exists to avoid."""
+    return got["content"][0]["text"]
+
+
 try:
-    single_read(thoughtful)
-    single_fails = False
+    block_zero(thoughtful)
+    block_zero_fails = False
 except (KeyError, IndexError, TypeError):
-    single_fails = True
+    block_zero_fails = True
 check("anthropic: Drop Deck's block-zero reader would fail on that shape, "
-      "which is why the multi-part reader joins text blocks", single_fails)
+      "which is why this reader joins the text blocks", block_zero_fails)
 check("openai: the message content",
       ai._openai_parts("m", "k", [], "q")[1](
           {"choices": [{"message": {"content": "A yellow circle."}}]})
@@ -428,6 +446,48 @@ finally:
 check("anthropic's refusal stop reason is the same sentence",
       not ok and "content filter" in said)
 
+# An answer that stopped because it ran out of room. The picture case is the
+# dangerous one: tidy_alt would make a half sentence look finished, and
+# nobody reading it aloud can see where it stopped.
+cut_answers = {
+    "anthropic": {"content": [{"type": "text", "text": "A bar chart showing"}],
+                  "stop_reason": "max_tokens"},
+    "openai": {"choices": [{"message": {"content": "A bar chart showing"},
+                            "finish_reason": "length"}]},
+    "google": {"candidates": [{"content": {"parts": [
+        {"text": "A bar chart showing"}]}, "finishReason": "MAX_TOKENS"}]},
+}
+for provider, answer in cut_answers.items():
+    fake = _Fake(answer)
+    urllib.request.urlopen = fake
+    try:
+        ok, said = ai.ask(good, "q", provider, "k")
+    finally:
+        urllib.request.urlopen = real_urlopen
+    check("%s: an answer cut off by the token budget is refused, not tidied "
+          "up and handed over" % provider,
+          not ok and "ran out of room" in said
+          and "A bar chart showing" not in said, said[:70])
+    check("%s: and it says what to change" % provider,
+          "Model box" in said and ai.PROVIDER_NAMES[provider] in said)
+finished = {"anthropic": {"content": [{"type": "text", "text": "A circle."}],
+                          "stop_reason": "end_turn"},
+            "openai": {"choices": [{"message": {"content": "A circle."},
+                                    "finish_reason": "stop"}]},
+            "google": {"candidates": [{"content": {"parts": [
+                {"text": "A circle."}]}, "finishReason": "STOP"}]}}
+for provider, answer in finished.items():
+    fake = _Fake(answer)
+    urllib.request.urlopen = fake
+    try:
+        ok, said = ai.ask(good, "q", provider, "k")
+    finally:
+        urllib.request.urlopen = real_urlopen
+    check("%s: an answer that finished normally is not called cut off"
+          % provider, ok and said == "A circle.", said)
+check("_cut_off says nothing about an answer with no stop reason at all",
+      all(ai._cut_off({}, p) == "" for p in ai.PROVIDERS))
+
 fake = _Fake({"choices": [{"message": {"content": "   "}, "finish_reason": "stop"}]})
 urllib.request.urlopen = fake
 try:
@@ -468,6 +528,10 @@ check("the document timeout is longer than the picture timeout",
       ai.DOCUMENT_TIMEOUT > ai.TIMEOUT >= 60)
 check("the document answer budget is bigger than the picture one",
       ai.DOCUMENT_TOKENS > ai.IMAGE_TOKENS >= 1500)
+check("the picture budget leaves room for a model that thinks first",
+      ai.IMAGE_TOKENS >= 8000, ai.IMAGE_TOKENS)
+check("and finding the blanks on a form has a budget of its own",
+      ai.FORM_TOKENS >= 4000, ai.FORM_TOKENS)
 have = ai.providers_with_keys()
 if have:
     check("the default follows a key that is really on this machine",
