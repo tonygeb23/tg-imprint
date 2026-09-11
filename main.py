@@ -234,6 +234,25 @@ def selftest():  # noqa: C901
                             "picture could ever be sent to a describer")
         else:
             notes.append("Pillow: resize and JPEG working")
+        # And a picture PNG will not take. CMYK is what anything from print
+        # carries, and until 0.2.1 one of them anywhere in a document made
+        # the whole document fail to open. Reported by Rebecca Legowski.
+        # Proved here rather than assumed, because this is a frozen build and
+        # a library that imports is not a library that works.
+        from tgimprint.docfile import png_safe
+        bad = []
+        for mode in ("CMYK", "YCbCr", "LAB", "HSV", "F", "I"):
+            try:
+                spare = _io.BytesIO()
+                png_safe(Image.new(mode, (16, 12))).save(spare, "PNG")
+            except Exception as exc:
+                bad.append("%s (%s)" % (mode, exc))
+        if bad:
+            problems.append("a picture from print cannot be turned into a "
+                            "PNG in this build, so documents containing one "
+                            "will not open: %s" % ", ".join(bad))
+        else:
+            notes.append("Pillow: CMYK and five other modes convert for PNG")
     except Exception as exc:
         problems.append("Pillow raised in this build: %r" % exc)
 
