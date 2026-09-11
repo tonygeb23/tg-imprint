@@ -289,5 +289,59 @@ finally:
     paths.autosave_dir = real_autosave
 
 shutil.rmtree(WORK, ignore_errors=True)
+# ---------------------------------------------------------------------------
+# Rebecca Legowski, 10 September 2026: "Tried to open a document, to be met
+# with the message: cannot write mode CMYK as PNG." Her document would not
+# open at all. CMYK is not exotic; it is what any picture from print carries.
+print("\nA picture PNG cannot hold")
+
+import io as _io                                          # noqa: E402
+from PIL import Image as _Image                           # noqa: E402
+from tgimprint.docfile import (ALPHA_MODES, PNG_MODES,         # noqa: E402
+                               embed_image, png_safe)
+
+
+def _as_jpeg(mode, size=(60, 40)):
+    buf = _io.BytesIO()
+    _Image.new(mode, size).save(buf, "JPEG")
+    return buf.getvalue()
+
+
+cmyk = embed_image(_as_jpeg("CMYK"))
+try:
+    _png = cmyk.png_bytes()
+    _ok, _why = True, ""
+except Exception as exc:
+    _png, _ok, _why = b"", False, str(exc)
+check("a CMYK picture can be turned into a PNG at all", _ok, _why)
+check("and what comes out really is a PNG",
+      _png[:8] == b"\x89PNG\r\n\x1a\n")
+
+# Every mode Pillow refuses, not only the one that was reported.
+_broken = []
+for _mode in ("CMYK", "YCbCr", "LAB", "HSV", "F", "I"):
+    _buf = _io.BytesIO()
+    try:
+        png_safe(_Image.new(_mode, (20, 15))).save(_buf, "PNG")
+    except Exception as exc:
+        _broken.append("%s: %s" % (_mode, exc))
+check("and so can every other mode PNG will not take", not _broken, _broken)
+
+check("I is converted even though Pillow still writes it, because Pillow 13 "
+      "removes it in October 2026", "I" not in PNG_MODES)
+
+# The obvious alpha test is wrong and it was in this file before today:
+# "LAB" contains an A, and so do its bands, and it has no alpha whatsoever.
+check("LAB does not get a pointless alpha channel",
+      png_safe(_Image.new("LAB", (10, 10))).mode == "RGB")
+check("and the alpha list is spelled out rather than guessed from the name",
+      "LAB" not in ALPHA_MODES and "RGBA" in ALPHA_MODES)
+
+_p = _Image.new("P", (10, 10))
+_p.info["transparency"] = 0
+check("real transparency is still kept", png_safe(_p).mode in ("P", "RGBA"))
+check("a picture PNG can already hold is handed back untouched",
+      png_safe(_Image.new("RGB", (10, 10))).mode == "RGB")
+
 print("\n%d/%d checks passed" % (sum(CHECKS), len(CHECKS)))
 sys.exit(0 if all(CHECKS) else 1)

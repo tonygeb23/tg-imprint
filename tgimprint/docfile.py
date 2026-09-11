@@ -92,8 +92,51 @@ class EmbeddedImage:
             return self.data
         with Image.open(io.BytesIO(self.data)) as image:
             out = io.BytesIO()
-            image.save(out, format="PNG", optimize=True)
+            png_safe(image).save(out, format="PNG", optimize=True)
             return out.getvalue()
+
+
+#: The picture modes PNG can actually hold. Everything else has to be
+#: converted before it is saved, and the list is short enough to state rather
+#: than guess at.
+PNG_MODES = ("1", "L", "LA", "P", "RGB", "RGBA")
+
+#: The modes that really carry an alpha channel. An explicit list, because
+#: the obvious test, `"A" in image.mode`, is WRONG: "LAB" contains an A and
+#: has no alpha at all, so a LAB picture was being given a pointless alpha
+#: channel and a third more bytes on every page. `image.getbands()` is no
+#: better, because LAB's bands are literally L, A and B. That idiom was in
+#: this file before today and it is the reason this list is spelled out.
+ALPHA_MODES = ("LA", "La", "PA", "RGBA", "RGBa")
+
+
+def png_safe(image):
+    """A picture PNG can really write, converting only when it has to.
+
+    **Rebecca Legowski, 10 September 2026: "Tried to open a document, to be met
+    with the message: cannot write mode CMYK as PNG."** Her document would not
+    open at all.
+
+    CMYK is not exotic, it is what any picture that came from print carries,
+    and Pillow raises rather than converting. `png_bytes` saved straight to
+    PNG with no conversion at all, and `pdfimport` calls it on every single
+    image in a document, outside the try that guards the embed above it. So
+    one print-origin picture anywhere in a PDF took the whole import down and
+    showed the raw library error to somebody who could not see the document.
+
+    YCbCr, LAB, HSV and F are the same shape of problem and are covered by
+    the same list rather than waiting to be found one at a time. **"I" is in
+    that list too even though Pillow still writes it**, because Pillow 13
+    removes it on 15 October 2026 and a deprecation warning today is a broken
+    document next month.
+
+    Converted to RGBA only when there is really transparency to keep, because
+    an alpha channel nothing uses is a third more bytes on every page.
+    """
+    if image.mode in PNG_MODES:
+        return image
+    keep_alpha = image.mode in ALPHA_MODES or "transparency" in image.info
+    return image.convert("RGBA" if keep_alpha else "RGB")
 
 
 def _read_source(source):
@@ -152,8 +195,7 @@ def embed_image(source):
         data = raw
     else:
         mime = "image/png"
-        if image.mode not in ("RGB", "RGBA", "L", "LA", "P", "1"):
-            image = image.convert("RGBA" if "A" in image.mode else "RGB")
+        image = png_safe(image)
         if image.mode == "P" and "transparency" in image.info:
             image = image.convert("RGBA")
         out = io.BytesIO()

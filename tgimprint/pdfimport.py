@@ -495,8 +495,17 @@ def _import_open(doc, path, progress):
                     figure = ('<figure><img src="%s" alt="" data-needs-alt="1"></figure>'
                               % embedded.data_uri)
                 builder.block("figure", figure)
+                # Guarded, because embed_image above is and this was not.
+                # The picture is already in the page as a data URI by this
+                # point; this copy exists only so a describer has a PNG to
+                # look at. Losing it costs the alt text for one image and
+                # nothing else, where raising costs the whole document.
+                try:
+                    as_png = embedded.png_bytes()
+                except Exception:
+                    as_png = b""
                 images.append(ImportedImage(
-                    id="picture-%d" % picture_number, png_bytes=embedded.png_bytes(),
+                    id="picture-%d" % picture_number, png_bytes=as_png,
                     width=embedded.width, height=embedded.height, page=number + 1,
                     alt=alt, alt_source=source))
                 continue
