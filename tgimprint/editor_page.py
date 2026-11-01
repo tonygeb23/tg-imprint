@@ -41,26 +41,28 @@ _CSS = """
    is built from the body HTML alone, so no screen theme can reach it;
    tests/test_display.py proves that. */
 :root {
-  --surround: #e3e6eb; --paper: #ffffff; --ink: #111111; --muted: #444444;
-  --rule: #8f96a3; --soft: #c8ccd4; --panel: #f1f3f6; --panel-ink: #111111;
-  --link: #0b4fb8; --focus: #2b6fd6; --sel: #b9d3ff; --sel-ink: #111111;
-  --caret: #000000; --caret-width: 2px; --focus-width: 3px;
+  --surround: #eeeae3; --paper: #ffffff; --ink: #16171a; --muted: #4a4d55;
+  --rule: #8b8e96; --soft: #dfdad2; --panel: #f4f1ec; --panel-ink: #16171a;
+  --link: #2f5d7c; --focus: #2f5d7c; --sel: #ffd8c2; --sel-ink: #16171a;
+  --caret: #16171a; --caret-width: 2px; --focus-width: 3px;
   --body-weight: normal; --line-height: 1.5;
-  --shadow: 0 1px 2px rgba(0,0,0,0.20), 0 6px 20px rgba(0,0,0,0.12);
+  --shadow: 0 1px 2px rgba(22,23,26,0.07), 0 10px 30px rgba(22,23,26,0.07);
+  --thumb: #c4beb3; --thumb-hover: #8b8e96;
   color-scheme: light;
 }
 html[data-theme="dark"] {
-  --surround: #16181c; --paper: #1e2126; --ink: #eef1f6; --muted: #c3c9d4;
-  --rule: #6f7783; --soft: #3a4049; --panel: #2a2e35; --panel-ink: #eef1f6;
-  --link: #86b8ff; --focus: #7ab4ff; --sel: #2f5c9e; --sel-ink: #ffffff;
-  --caret: #ffffff; --shadow: none;
+  --surround: #16171a; --paper: #202226; --ink: #f2efea; --muted: #c6c4c0;
+  --rule: #6f7078; --soft: #34363d; --panel: #2c2e33; --panel-ink: #f2efea;
+  --link: #ff9e6b; --focus: #ff9e6b; --sel: #8a3a12; --sel-ink: #ffffff;
+  --caret: #ffffff; --shadow: 0 10px 30px rgba(0,0,0,0.35);
+  --thumb: #44464e; --thumb-hover: #6f7078;
   color-scheme: dark;
 }
 html[data-theme="yellow_on_black"] {
   --surround: #000000; --paper: #000000; --ink: #ffff00; --muted: #ffff00;
   --rule: #ffff00; --soft: #ffff00; --panel: #000000; --panel-ink: #ffff00;
   --link: #66d9ff; --focus: #ffff00; --sel: #ffff00; --sel-ink: #000000;
-  --caret: #ffff00; --shadow: none;
+  --caret: #ffff00; --shadow: none; --thumb: #ffff00; --thumb-hover: #ffff00;
   color-scheme: dark;
 }
 /* Follow Windows: the system colour keywords, and the light or dark the
@@ -70,22 +72,26 @@ html[data-theme="high_contrast"] {
   --surround: Canvas; --paper: Canvas; --ink: CanvasText; --muted: CanvasText;
   --rule: CanvasText; --soft: CanvasText; --panel: Canvas; --panel-ink: CanvasText;
   --link: LinkText; --focus: Highlight; --sel: Highlight; --sel-ink: HighlightText;
-  --caret: CanvasText; --shadow: none;
+  --caret: CanvasText; --shadow: none; --thumb: CanvasText; --thumb-hover: CanvasText;
   color-scheme: light dark;
 }
 html, body { margin: 0; padding: 0; background: var(--surround); }
+html { scrollbar-color: var(--thumb) transparent; }
 body { font-family: %(font)s; font-size: %(px)spx; line-height: var(--line-height); }
 #editor {
   box-sizing: border-box;
   background: var(--paper); color: var(--ink); font-weight: var(--body-weight);
-  width: %(width)s; max-width: calc(100vw - 32px); min-height: %(height)s;
-  margin: 16px auto 32px auto; padding: %(margin)s;
+  width: %(width)s; max-width: calc(100vw - 48px); min-height: %(height)s;
+  margin: 24px auto 40px auto; padding: %(margin)s;
   box-shadow: var(--shadow);
-  border: 1px solid var(--soft); border-radius: 2px;
+  border: 1px solid var(--soft); border-radius: 3px;
   outline: none; caret-color: var(--caret);
   overflow-wrap: break-word;
 }
-#editor:focus { box-shadow: 0 0 0 var(--focus-width) var(--focus), var(--shadow);
+/* The focus cue is a spine down the left edge of the page and a hairline
+   round it, not a box. It stays on screen however far down the page you are,
+   and the spine is as wide as the Display page's focus ring says. */
+#editor:focus { box-shadow: inset var(--focus-width) 0 0 0 var(--focus), var(--shadow);
   border-color: var(--focus); }
 /* The caret the Display page can widen. The browser draws a one pixel bar,
    which disappears against a large font; this one is a box of the asked for
@@ -96,9 +102,10 @@ body { font-family: %(font)s; font-size: %(px)spx; line-height: var(--line-heigh
   animation: tgblink 1.06s steps(1) infinite; }
 html[data-fatcaret="1"] #editor { caret-color: transparent; }
 @keyframes tgblink { 0%%, 49%% { opacity: 1; } 50%%, 100%% { opacity: 0; } }
-#editor h1 { font-size: 2.0em; margin: 0.8em 0 0.35em; line-height: 1.2; }
-#editor h2 { font-size: 1.6em; margin: 0.8em 0 0.35em; line-height: 1.25; }
-#editor h3 { font-size: 1.3em; margin: 0.8em 0 0.3em; line-height: 1.3; }
+#editor h1 { font-size: 2.1em; margin: 0.8em 0 0.4em; line-height: 1.15; letter-spacing: -0.01em; }
+#editor h2 { font-size: 1.55em; margin: 1.1em 0 0.4em; line-height: 1.2; }
+#editor h3 { font-size: 1.25em; margin: 1em 0 0.3em; line-height: 1.3; }
+#editor > :first-child { margin-top: 0; }
 #editor h4 { font-size: 1.15em; margin: 0.7em 0 0.3em; }
 #editor h5 { font-size: 1.05em; margin: 0.6em 0 0.25em; }
 #editor h6 { font-size: 1.0em; margin: 0.6em 0 0.25em; font-style: italic; }
@@ -123,7 +130,7 @@ html[data-fatcaret="1"] #editor { caret-color: transparent; }
 #editor figure.place-left { margin-right: auto; }
 #editor figure.place-centre { margin-left: auto; margin-right: auto; }
 #editor figure.place-right { margin-left: auto; }
-#editor figure.imprint-here { outline: var(--focus-width) dashed var(--focus); outline-offset: 3px; }
+#editor figure.epdf-here { outline: var(--focus-width) dashed var(--focus); outline-offset: 3px; }
 #editor table { border-collapse: collapse; margin: 0.6em 0 0.9em; width: 100%%; }
 #editor th, #editor td { border: 1px solid var(--rule); padding: 0.3em 0.5em; text-align: left;
   vertical-align: top; min-width: 2em; }
@@ -1181,6 +1188,39 @@ _JS = r"""
       ed.focus();
       postState();
       return { ok: true };
+    },
+    // What the Accessibility panel reads. The same document with the picture
+    // data left out: doccheck only wants the attributes, and a few phone
+    // photos would otherwise cross the bridge every time typing stops.
+    checkBody: function () {
+      var clone = ed.cloneNode(true);
+      Array.prototype.slice.call(clone.querySelectorAll('img')).forEach(function (img) {
+        img.setAttribute('src', '');
+      });
+      return clone.innerHTML;
+    },
+    // Moves to the Nth heading, picture, link or table, counted the way
+    // doccheck counts them: every one in the document, in document order.
+    goToIssue: function (kind, ordinal) {
+      var sel = { heading: 'h1,h2,h3,h4,h5,h6', picture: 'img', link: 'a', table: 'table' }[kind];
+      var node = sel ? ed.querySelectorAll(sel)[(ordinal | 0) - 1] : null;
+      if (!node) { return { ok: false }; }
+      var target = node;
+      if (kind === 'picture') {
+        var fig = node.closest('figure');
+        var cap = fig ? fig.querySelector('figcaption') : null;
+        target = cap || fig || node;
+        placeCaret(target, !cap);
+      } else if (kind === 'table') {
+        placeCaret(node.querySelector('th,td') || node, true);
+      } else {
+        placeCaret(node, true);
+      }
+      node.scrollIntoView({ block: 'center' });
+      ed.focus();
+      postState();
+      return { ok: true, kind: kind, ordinal: ordinal,
+               text: (node.textContent || '').trim().slice(0, 80) };
     },
     headings: headingsList,
     goToHeading: function (index) {

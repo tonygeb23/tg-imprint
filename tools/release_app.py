@@ -54,6 +54,7 @@ CHANNEL = "win"
 # Tony's voice and is listed in docs/STRINGS.md for his approval before it
 # ships.
 NOTES = {
+    "0.3.0": ("A correction first: PDFs from earlier versions that said PDF/UA failed an independent check, so export them again. That is fixed, and every release now has to pass that check. New in this version: scanned PDFs are read by text recognition on your own machine, damaged PDFs open, a tagged PDF is read from its tags, and there is a start screen, an Accessibility panel, Analyse a PDF, Repair a PDF, and export to Word, Markdown and plain text."),
     "0.2.1": ("A document with a picture that came from print now opens. Pictures in CMYK, which is what anything printed carries, made the whole document fail to open with a message about PNG. One picture that will not convert now costs that picture's description and never the document. Reported by Rebecca Legowski."),
     "0.2.0": ("You can fill in PDF forms now, from a list rather than a page: "
               "every field with its label, its kind and what is in it. If the "

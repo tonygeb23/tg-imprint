@@ -136,7 +136,7 @@ class DocPropertiesDialog(wx.Dialog):
         self.subject.SetValue(meta.get("subject", "") or "")
         size = meta.get("page_size", C.DEFAULT_PAGE_SIZE)
         self.page_size.SetSelection(C.PAGE_SIZES.index(size) if size in C.PAGE_SIZES else 0)
-        (self.title if focus == "title" else self.author).SetFocus()
+        {"title": self.title, "lang": self.language.choice}.get(focus, self.author).SetFocus()
         if focus == "title":
             self.title.SelectAll()
 

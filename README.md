@@ -2,7 +2,7 @@
 
 Write a document with headings, lists, links and pictures, and export a
 tagged PDF that screen readers can read. Open a PDF somebody sent you and
-make it accessible. Describe pictures with Claude, ChatGPT or Gemini on your
+make it accessible, even a scan or a damaged file. Describe pictures with Claude, ChatGPT or Gemini on your
 own key. A TG Studios program for Windows.
 
 Documents are `.imprint` files: self-contained HTML inside a file type the
@@ -15,8 +15,9 @@ prompt, and an installed copy updates itself in place, with your say-so,
 downloading only what changed. Nothing is downloaded or applied without
 asking, and every update is checked against the TG Studios signature.
 
-Free and MIT licensed. The source is at
-https://github.com/tonygeb23/tg-imprint, and pull requests are welcome.
+Free and MIT licensed, and open for testing and work from the community.
+`CONTRIBUTING.md` says how to test it, how to report what breaks, and how to send
+code. Pick up an issue at https://github.com/tonygeb23/tg-imprint/issues.
 
 ## Running from source
 

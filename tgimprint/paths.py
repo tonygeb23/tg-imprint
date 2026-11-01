@@ -31,6 +31,15 @@ def resource(*parts):
     return os.path.join(base, *parts)
 
 
+def tessdata_dir():
+    """The text recognition language data. The build puts it in a folder of
+    its own; from source it is under assets."""
+    frozen = resource("tessdata")
+    if os.path.isdir(frozen):
+        return frozen
+    return os.path.join(app_folder(), "assets", "tessdata")
+
+
 def config_dir():
     """%APPDATA%\\TG Studios\\TG Imprint, created on first use.
 

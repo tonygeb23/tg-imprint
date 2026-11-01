@@ -1,0 +1,27 @@
+name: Something went wrong
+description: A fault in TG Imprint, anything from a crash to a wrong word.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TG Imprint version
+      description: It is under Help, About.
+    validations:
+      required: true
+  - type: input
+    id: reader
+    attributes:
+      label: Screen reader or display setup
+      description: For example NVDA 2026.3, JAWS 2026, or 150 percent scale with yellow on black. Leave blank if neither applies.
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version

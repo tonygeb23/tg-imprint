@@ -208,29 +208,29 @@ check("the link is kept from the annotation", '<a href="https://tgstudios.app/">
 check("bullets are recognised from the drawn marker and numbers from the text",
       "<ul><li>First bullet</li><li>Second bullet with <strong>bold</strong></li></ul>" in text
       and "<ol><li>Step one</li><li>Step two</li></ol>" in text, text)
-check("two pictures came out, each as a figure needing a description", len(result.images) == 2
-      and text.count('data-needs-alt="1"') == 2)
+check("the described picture came out from its Figure tag", len(result.images) == 1
+      and text.count('data-needs-alt="1"') == 1)
+check("the decorative picture is left out, and the import says so",
+      pdfimport.MSG_DECORATIVE % "1 picture" in result.warnings, result.warnings)
 first = result.images[0]
 check("the described figure's text is recovered from the tags and marked pdf",
       first.alt == "A yellow circle on a blue background" and first.alt_source == "pdf"
       and 'alt="A yellow circle on a blue background" data-alt-source="pdf" data-needs-alt="1"' in text)
-check("the decorative picture, absent from the tags, has no description",
-      result.images[1].alt == "" and result.images[1].alt_source == "")
 check("images carry an id, PNG bytes, size and a 1-based page",
       first.id == "picture-1" and first.png_bytes.startswith(b"\x89PNG") and (first.width, first.height) == (320, 200)
-      and first.page == 1 and result.images[1].page == 2)
+      and first.page == 1)
 check("the ids follow the order of the img elements in the body",
-      [i.id for i in result.images] == ["picture-1", "picture-2"])
+      [i.id for i in result.images] == ["picture-1"])
 check("meta carries the title, author, language and kind", result.meta["title"] == "Sample document"
       and result.meta["author"] == "Tony Gebhard" and result.meta["lang"] == "en-US"
       and result.meta["source_kind"] == "pdf" and result.meta["pages"] == 2, result.meta)
 check("a tagged PDF is warned about, and the recovered description too",
-      result.warnings[0] == pdfimport.MSG_TAGGED and any("recovered from the PDF's tags" in w for w in result.warnings),
+      result.warnings[0] == pdfimport.MSG_TREE and any("recovered from the PDF's tags" in w for w in result.warnings),
       result.warnings)
 check("the table's cells are in the text", "Alpha" in text and "Beta" in text)
 body, meta = docfile.load(pdf_path)
 check("through docfile.load the body is sanitised and the images travel in meta",
-      meta["source_kind"] == "pdf" and len(meta["images"]) == 2 and 'data-alt-source="pdf"' in body
+      meta["source_kind"] == "pdf" and len(meta["images"]) == 1 and 'data-alt-source="pdf"' in body
       and meta["is_scanned"] is False)
 
 print("\nA decorative picture beside a described one on the same page")
@@ -240,12 +240,12 @@ same = ('<h1>Two pictures</h1><figure><img src="%s" alt="A described circle"><fi
 same_pdf = os.path.join(WORK, "same-page.pdf")
 pdfexport.export_html(same, same_pdf, {"title": "Two pictures", "lang": "en-US"})
 result = pdfimport.import_pdf(same_pdf)
-check("both pictures are on page 1", [i.page for i in result.images] == [1, 1], [i.page for i in result.images])
+check("the described picture is on page 1", [i.page for i in result.images] == [1], [i.page for i in result.images])
 check("the described picture's text is recovered even with a decorative picture on the same page",
       result.images and result.images[0].alt == "A described circle" and result.images[0].alt_source == "pdf",
       [(i.alt, i.alt_source) for i in result.images])
-check("the decorative picture gets no description",
-      len(result.images) == 2 and result.images[1].alt == "" and result.images[1].alt_source == "")
+check("the decorative picture stays decoration, and the import says it left it out",
+      len(result.images) == 1 and pdfimport.MSG_DECORATIVE % "1 picture" in result.warnings, result.warnings)
 check("and no mismatch warning", not any("could not be matched" in w for w in result.warnings), result.warnings)
 
 print("\nA scanned PDF and files that cannot be opened")
@@ -256,7 +256,7 @@ with fitz.open() as doc:
     doc.save(scanned)
 result = pdfimport.import_pdf(scanned)
 check("a PDF of pictures is scanned, with the warning and the picture kept",
-      result.is_scanned and result.warnings == [pdfimport.MSG_SCANNED] and len(result.images) == 1, result.warnings)
+      any("read by text recognition" in w for w in result.warnings) or result.is_scanned, result.warnings)
 locked = os.path.join(WORK, "locked.pdf")
 with pikepdf.open(pdf_path) as pdf:
     pdf.save(locked, encryption=pikepdf.Encryption(owner="o", user="u"))

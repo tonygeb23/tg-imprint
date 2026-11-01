@@ -11,6 +11,18 @@ to E9), `DECISIONS.md` ("What I measured myself") and the tests under
 
 No em dashes or en dashes anywhere in this file. Tony's rule.
 
+## Correction, 2026-11-01
+
+Until 0.3.0 this document said the export was PDF/UA-1 conformant on the
+strength of the in-app checker alone. **It was not.** veraPDF 1.30.3 failed
+every export of 0.2.1 that carried the identifier, with Edge 156: Strong and
+Em unmapped (ISO 14289-1 7.1), and a decorative picture drawn outside any
+marked content (7.1). `tgimprint/pdftree.py` now repairs both and writes
+LBody, the checker reads for both, and `tools/verify_ua.py` puts eleven
+documents through veraPDF before any release. A claim is only as good as the
+thing that checks it: the checker that gates the identifier must never be
+the only witness to it.
+
 ## The pipeline in one paragraph
 
 The editor's HTML goes through the one sanitiser (`htmlclean.normalise`,
@@ -18,7 +30,8 @@ export mode), is wrapped in a page with the print stylesheet, is printed
 by a Chromium browser running headless (`pdfengine`: the Edge browser,
 else the WebView2 runtime's own msedge.exe, else Chrome), is patched with
 pikepdf (`pdfexport`: MarkInfo, Lang, DisplayDocTitle, the Info
-dictionary, the XMP, a description on every link annotation), is checked
+dictionary, the XMP, a description on every link annotation; `pdftree`: the
+RoleMap, LBody, and decoration marked as Artifact), is checked
 (`pdfcheck.check`), and gets the PDF/UA-1 identifier only if every check
 passes. The user always gets a tagged PDF; what varies is whether it
 carries the claim, and the report says why. If the engine's own output
@@ -136,6 +149,19 @@ do; the report is plain text, one line per check, PASS, FAIL or WARN.
 A file that is not a PDF, is missing, or needs a password gives one failed
 "File readable" result and nothing else.
 
+Added in 0.3.0, because PAC and veraPDF look at them and a real file fails
+them: Tags trusted (`/Suspects`), Structure types (every type standard or
+mapped), Drawing marked (nothing painted outside marked content), Table
+headers, Form type (XFA), Form fields named, Form fields tagged, Comments
+described, Fonts map to letters, Text readable (the share of the text that
+reads back as symbols), Permissions.
+
+`pdfanalysis.analyse` sits on top of the checker and answers the question a
+person has: can a screen reader read this, and what do I do next. It sorts
+every page into text, scanned, garbled or blank and the file into one of six
+levels. `pdfrepair.repair_copy` makes the changes that need no guess at
+structure and keeps every page looking exactly as it did; it claims nothing.
+
 ## What the checker cannot check
 
 Nothing a program can prove from the file:
@@ -225,10 +251,12 @@ an encoded path cannot slip past it.
 
 Measured, and not fixable from here:
 
-- No LBody: a list item is Lbl plus a NonStruct with the text. PAC may
-  warn. The checker names it as a warning only; the veraPDF run at the
-  audit decides whether it matters.
+- No LBody from the engine: `pdftree.wrap_list_bodies` adds it after the
+  print, moving the same child objects so the parent tree stays right.
 - NonStruct wrappers around every text run.
+- PDF/UA-2 does not pass and is not claimed: it needs PDF 2.0, a namespace
+  on every element, structure destinations, and no Caption directly under
+  Document (veraPDF 1.30.3, profile ua2).
 - Inline language changes are lost: `span lang` becomes nothing. A
   paragraph's lang is kept, so the sanitiser hoists a whole-paragraph
   span and drops the rest with a warning.
@@ -246,7 +274,30 @@ Measured, and not fixable from here:
 
 ## Import, what it recovers and what it guesses
 
-`pdfimport.import_pdf` reads the text layer with PyMuPDF. Headings are
+**Opening.** `pdfrepair.open_readable` opens the file with PyMuPDF and, when
+that fails or finds no pages, rebuilds a working copy through pikepdf, which
+recovers files MuPDF will not (a PDF cut off half way, measured). Repairs and
+lost pages are always said. An empty file, a file that is not a PDF, a
+missing file and a wrong password each get one sentence, with no path and no
+library words.
+
+**A good tagged PDF is read from its tags**, not re-guessed: headings, lists
+with nesting, tables with TH and spans, quotes, links, strong, emphasis and
+figures matched to their pictures by marked content id. When the tree holds
+less than 85 percent of the page text, or a corrupt tree makes it unusable,
+the layout is used instead and the import says so.
+
+**A scanned page is read by text recognition**, offline, with the Tesseract
+inside PyMuPDF and the tessdata_fast data for English and Spanish in
+`assets/tessdata` (Apache 2.0). So is a page whose text reads back as symbols.
+The whole page picture is dropped once its words are in. One warning says how
+many pages, and tells the reader to check names and numbers.
+
+**From the layout**, `pdfimport.import_pdf` reads the text layer with PyMuPDF.
+A ruled table becomes a table with a header row; a line repeated in the
+margins of half the pages or more is a running header or footer and is left
+out with a warning; two columns are read one after the other; heading levels
+are renumbered so the first is 1 and none is skipped. Headings are
 guessed from font sizes (the largest distinct sizes above the body size
 become h1, h2 and h3; a short bold line at body size becomes h4), lines
 are joined into paragraphs with hyphenation healed and sentences carried
@@ -270,9 +321,9 @@ picture on the same page never breaks the match for the described one
 beside it. A wrong description presented as fact is worse than none, so
 a mismatch attaches nothing and warns.
 
-A page with no text is a scanned page. When every page is, `is_scanned`
-is set and the warning says there is no text recognition in this
-release.
+When the language data is missing, a page with no text stays a picture,
+`is_scanned` is set when every page is one, and the warning says the data is
+missing.
 
 ## Form fields, and what is honestly claimed about them
 
@@ -332,17 +383,15 @@ A later release that gives PyMuPDF a structure tree, or that runs a form
 back through the export, could tag the fields properly. Until then this
 section is the whole truth about what is in the file.
 
-## Not in 1.0.0
+## Not in 0.3.0
 
 - Right to left languages: warned about, not claimed.
-- OCR: a scanned PDF cannot be made readable here; the importer says so.
-- Tree aware import: a tagged PDF's headings, lists and tables are
-  re-guessed from the layout. The checker's content stream decoder
-  (`pdfcheck.TextIndex`, text per marked content id) is the piece a later
-  release would build it on.
-- LBody: not written by the engine; warned about only.
-- veraPDF in the build, and PAC: by hand, at the audit, if Tony approves
-  the downloads.
+- Form fields in the structure tree: a filled or field-added form still
+  claims nothing (see above). Next release.
+- PDF/UA-2.
+- Tagging a PDF in place, keeping its layout. Open it and export it instead.
+- A structure editor for an imported PDF, and batch. Next release.
+- veraPDF is a build tool, not shipped: GPL or MPL, and it needs Java.
 
 ## Verifying a file in PAC or veraPDF
 
@@ -352,12 +401,12 @@ structure checks to pass; expect at most warnings about LBody on list
 items. Anything else it reports is a rule for the checker: name it in
 the report and add it to `pdfcheck`.
 
-veraPDF (free, needs Java, which is on this machine): install the GUI or
-the command line, choose the profile PDF/UA-1, run it on the exported
-fixtures in `tests/fixtures` after `python tests/test_pdfexport.py` has
-produced them (it writes to a temp folder; export any document from the
-app to keep one). The report lists failed rules by clause number; every
-failure becomes a named checker rule.
+veraPDF (free, needs Java, which is on this machine): installed at
+`%LOCALAPPDATA%\TG Studios Build\verapdf`. `python tools/verify_ua.py`
+exports eleven documents through the real pipeline and fails if any of them
+claims PDF/UA-1 and veraPDF disagrees. It exits 2 and says skipped when
+veraPDF is missing, and the release treats that as not done. Every failure
+becomes a named checker rule.
 
 Neither tool can judge whether a description is true. That is what the
 Pictures dialog and a sighted reviewer are for.

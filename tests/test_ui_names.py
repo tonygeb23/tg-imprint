@@ -118,6 +118,16 @@ check("every toolbar control is named", not problems, problems)
 check("the toolbar style choice carries an accessible object",
       getattr(frame.toolbar.style, "_tgimprint_accessible", None) is not None)
 check("the status bar has four fields", frame.status.GetFieldsCount() == 4)
+problems = []
+frame.show_start()
+wx.Yield()
+walk(frame.start, "start screen", problems)
+check("every control on the start screen is named", not problems, problems)
+frame.show_editor()
+wx.Yield()
+problems = []
+walk(frame.panel, "panel", problems)
+check("every control in the Accessibility panel is named", not problems, problems)
 check("the window has its icons", frame.GetIcons().GetIconCount() == 10)
 check("the window title names the app", C.APP_NAME in frame.GetTitle())
 
@@ -187,6 +197,15 @@ audit("Update available", d)
 d.Destroy()
 d = updatedialog.DownloadProgressDialog(frame, frame, "version 9.9.9")
 audit("Download progress", d)
+d.Destroy()
+
+d = dialogs.TextDialog(frame, "Analysis of Letter.pdf", "A screen reader can read this PDF.",
+                       buttons=(("&Open it here", "open"), ("&Repair it", "repair"),
+                                ("&Close", "close")),
+                       field_label="&Report", escape_result="close", default=2)
+audit("Analysis", d)
+check("Analysis: the field is read only and holds the report",
+      not d.field.IsEditable() and "screen reader" in d.field.GetValue())
 d.Destroy()
 
 print("\nThe source rules")

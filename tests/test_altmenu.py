@@ -116,6 +116,7 @@ def find_webview(window):
 app = wx.App(False)
 frame = tgimprint_main.build_main_window()
 frame.Show()
+frame.show_editor()                     # past the start screen, into a document
 view = find_webview(frame)
 check("the window holds a WebView editor", view is not None)
 state = {}

@@ -255,7 +255,7 @@ check("and with the theme", frame.editor.display()["theme"] == "dark")
 print("\nThe toolbar honours the choice")
 check("labels only was asked for and built", frame.toolbar.mode == "labels",
       frame.toolbar.mode)
-words = {a: frame.toolbar.label_for(a) for a in ("new", "bold", "align_right", "export_pdf")}
+words = {a: frame.toolbar.label_for(a) for a in ("new", "bold", "bullets", "export_pdf")}
 check("every tool carries its word", all(words.values()), words)
 frame.settings["toolbar_labels_mode"] = "icons"
 frame._fit_toolbar()
@@ -265,21 +265,108 @@ frame.settings["toolbar_labels_mode"] = "icons_labels"
 frame._fit_toolbar()
 check("icons with labels builds a bar with words",
       frame.toolbar.mode == "icons_labels" and frame.toolbar.label_for("bold") == "Bold")
-tools = ("new", "open", "save", "bold", "italic", "underline", "strike", "bullets",
-         "numbers", "quote", "align_left", "align_center", "align_right",
-         "align_justify", "insert_link", "insert_picture", "insert_table", "export_pdf")
+tools = ("new", "open", "save", "bold", "italic", "bullets", "numbers", "insert_link",
+         "insert_picture", "insert_table", "check_document", "export_pdf")
 check("no mode ever drops a tool",
       all(frame.toolbar.FindById(frame.id_of(a)) is not None for a in tools))
 squeezed = toolbar_mod.EditorToolBar(frame, frame.id_of, mode="icons_labels", squeeze=1)
 check("the squeeze drops words, not tools",
       all(squeezed.FindById(frame.id_of(a)) is not None for a in tools)
-      and squeezed.label_for("new") == "New" and squeezed.label_for("align_right") == "")
+      and squeezed.label_for("new") == "New" and squeezed.label_for("bullets") == ""
+      and squeezed.label_for("export_pdf") == "PDF")
 check("and it is narrower than the bar with every word",
       squeezed.needed_width() < frame.toolbar.needed_width(),
       (squeezed.needed_width(), frame.toolbar.needed_width()))
 check("every tool keeps its tooltip whatever is drawn",
       all((squeezed.FindById(frame.id_of(a)).GetShortHelp() or "").strip() for a in tools))
+tightest = toolbar_mod.EditorToolBar(frame, frame.id_of, mode="icons_labels", squeeze=2)
+check("at the narrowest every tool is still there, with no word",
+      all(tightest.FindById(frame.id_of(a)) is not None for a in tools)
+      and tightest.label_for("new") == "")
+check("and that bar fits the smallest window, so no tool is ever clipped off the end",
+      tightest.needed_width() <= frame.FromDIP(640),
+      (tightest.needed_width(), frame.FromDIP(640)))
 squeezed.Destroy()
+tightest.Destroy()
+
+print("\nThe themes hold their contrast")
+from tgimprint.ui import icons as icons_mod, theme as theme_mod  # noqa: E402
+
+
+def luminance(colour):
+    wx_colour = wx.Colour(colour)
+    parts = []
+    for value in (wx_colour.Red(), wx_colour.Green(), wx_colour.Blue()):
+        value /= 255.0
+        parts.append(value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2]
+
+
+def contrast(first, second):
+    light, dark = sorted((luminance(first), luminance(second)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+for name, values in theme_mod.THEMES.items():
+    check("%s: ink on the chrome is at least 7 to 1" % name,
+          contrast(values["ink"], values["chrome"]) >= 7, contrast(values["ink"], values["chrome"]))
+    check("%s: quiet text is at least 4.5 to 1" % name,
+          contrast(values["muted"], values["chrome"]) >= 4.5,
+          contrast(values["muted"], values["chrome"]))
+    check("%s: the accent is at least 3 to 1, as a mark must be" % name,
+          contrast(values["accent"], values["chrome"]) >= 3,
+          contrast(values["accent"], values["chrome"]))
+    check("%s: selected text is at least 4.5 to 1" % name,
+          contrast(values["selected_ink"], values["selected"]) >= 4.5)
+css_colours = {"normal": ("#16171a", "#ffffff", "#2f5d7c"), "dark": ("#f2efea", "#202226", "#ff9e6b")}
+for name, (ink, paper, link) in css_colours.items():
+    check("%s: the page text and its links clear 4.5 to 1" % name,
+          contrast(ink, paper) >= 4.5 and contrast(link, paper) >= 4.5)
+    check("%s: those are the colours in the stylesheet" % name,
+          ink in normal and paper in normal and link in normal)
+check("the old blue box is gone: the focus cue is a spine down the page edge",
+      "inset var(--focus-width) 0 0 0 var(--focus)" in normal)
+check("and that width still comes from the Display page", "--focus-width" in normal)
+
+print("\nThe colours follow the theme and give way to Windows")
+for theme_name in ("normal", "dark", "yellow_on_black"):
+    pal = theme_mod.palette(theme_name)
+    check("%s has a palette of its own" % theme_name, pal.name == theme_name and not pal.native)
+system = theme_mod.palette("high_contrast")
+check("the high contrast page theme hands everything back to the system", system.native)
+real_high_contrast = theme_mod.high_contrast
+theme_mod.high_contrast = lambda: True
+check("and so does Windows high contrast, whatever the page theme says",
+      all(theme_mod.palette(t).native for t in ("normal", "dark", "yellow_on_black")))
+drawn = icons_mod.draw("bold", 24, theme_mod.palette("dark"))
+check("a glyph still draws in the system colours", drawn.IsOk())
+theme_mod.high_contrast = real_high_contrast
+check("the dark themes draw their words in the tool bitmap, because Windows will not",
+      theme_mod.palette("dark").drawn_labels and not theme_mod.palette("normal").drawn_labels)
+for name in icons_mod.NAMES + icons_mod.MARKS:
+    painted = icons_mod.draw(name, 32, theme_mod.palette("normal")).ConvertToImage()
+    alpha = painted.GetAlpha()
+    check("%s draws something of its own" % name, name in icons_mod._PAINTERS and any(alpha))
+live_before = (frame.toolbar.pal.name, frame.toolbar.drawn)
+frame.settings["page_theme"] = "yellow_on_black"
+frame.apply_display()
+check("choosing a theme rebuilds the bar in it", frame.toolbar.pal.name == "yellow_on_black",
+      frame.toolbar.pal.name)
+check("and the panel and the start screen go with it",
+      frame.panel.pal.name == "yellow_on_black" and frame.start.pal.name == "yellow_on_black")
+skin_says = frame.status.skin._tgimprint_accessible
+check("the status bar's skin refuses focus and says nothing to a screen reader",
+      not frame.status.skin.AcceptsFocus() and skin_says.GetName(0)[1] == ""
+      and skin_says.GetState(0)[1] == wx.ACC_STATE_SYSTEM_INVISIBLE)
+check("the words themselves are in the native bar, where NVDA reads them",
+      type(frame.status.GetStatusText(3)) is str and frame.status.GetStatusText(3) != "")
+check("the hairline refuses focus and says nothing too",
+      not frame.top_rule.AcceptsFocus()
+      and frame.top_rule._tgimprint_accessible.GetName(0)[1] == "")
+check("on a dark theme the toolbar is drawn in every shape, so nothing sits on the system hover",
+      frame.toolbar.drawn)
+frame.settings["page_theme"] = "dark"
+frame.apply_display()
 
 print("\nThe zoom keys write the setting")
 frame._on_did("zoom_in", {"percent": 130})

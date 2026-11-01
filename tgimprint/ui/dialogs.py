@@ -18,20 +18,33 @@ import wx
 from .. import constants as C
 
 
-class _Named(wx.Accessible):
-    """An accessible object that answers one question: what is this."""
+#: docs/STRINGS.md, 0.3.0.
+PASSWORD_TITLE = "Password needed"
+PASSWORD_ASK = "Type the password for %s."
+PASSWORD_FIELD = "Password"
 
-    def __init__(self, name):
+
+class _Named(wx.Accessible):
+    """An accessible object that answers what is this, and, when it was
+    given one, what is it for."""
+
+    def __init__(self, name, description=""):
         super().__init__()
         self._name = name
+        self._description = description
 
     def GetName(self, childId):
         if childId == 0:
             return (wx.ACC_OK, self._name)
         return (wx.ACC_NOT_IMPLEMENTED, "")
 
+    def GetDescription(self, childId):
+        if childId == 0 and self._description:
+            return (wx.ACC_OK, self._description)
+        return (wx.ACC_NOT_IMPLEMENTED, "")
 
-def name_field(control, name):
+
+def name_field(control, name, description=""):
     """Make a control say what it is to a screen reader, not just to wx.
 
     The accessible is stored on the control on purpose: wx does not take
@@ -44,7 +57,7 @@ def name_field(control, name):
         if isinstance(child, wx.TextCtrl):
             target = child
             break
-    accessible = _Named(name)
+    accessible = _Named(name, description)
     control._tgimprint_accessible = accessible
     target.SetAccessible(accessible)
     return control
@@ -67,6 +80,7 @@ class FocusRing:
         self.width = max(0, int(width))
         self.controls = []
         self.focused = None
+        self.colour = None              # None is the system highlight
         parent.Bind(wx.EVT_PAINT, self._on_paint)
         for control in controls:
             self.watch(control)
@@ -111,7 +125,7 @@ class FocusRing:
             rect = control.GetRect()
         except Exception:
             return
-        colour = wx.SystemSettings.GetColour(wx.SYS_COLOUR_HIGHLIGHT)
+        colour = self.colour or wx.SystemSettings.GetColour(wx.SYS_COLOUR_HIGHLIGHT)
         dc.SetBrush(wx.TRANSPARENT_BRUSH)
         for step in range(self.width):
             dc.SetPen(wx.Pen(colour, 1))
@@ -210,17 +224,19 @@ def button_row(dialog, buttons):
 class TextDialog(wx.Dialog):
     """A message, or a report, in a read-only field with focus in it.
 
-    `buttons` is a list of (label, result) pairs; the first is the default
-    and Enter chooses it, Escape returns `escape_result` (the last button's
-    result by default). `result` is what was chosen, or None.
+    `buttons` is a list of (label, result) pairs; the one at `default` (the
+    first unless told otherwise) is what Enter chooses, Escape returns
+    `escape_result` (the last button's result by default). `result` is what
+    was chosen, or None.
     """
 
     def __init__(self, parent, title, text, buttons=(("&Close", "close"),),
-                 field_label="&Message", size=(560, 260), escape_result=None):
+                 field_label="&Message", size=(560, 260), escape_result=None, default=0):
         super().__init__(parent, title=title,
                          style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
         self.result = None
         self._buttons = list(buttons)
+        self._default = default
         self._escape_result = escape_result if escape_result is not None else self._buttons[-1][1]
         outer = wx.BoxSizer(wx.VERTICAL)
         outer.Add(wx.StaticText(self, label=field_label), 0, wx.LEFT | wx.RIGHT | wx.TOP, 10)
@@ -236,7 +252,7 @@ class TextDialog(wx.Dialog):
             button.Bind(wx.EVT_BUTTON, lambda _e, v=value: self._finish(v))
             row.Add(button, 0, wx.LEFT, 8)
             self.controls.append(button)
-            if index == 0:
+            if index == default:
                 button.SetDefault()
         outer.Add(row, 0, wx.EXPAND | wx.ALL, 10)
         self.SetSizerAndFit(outer)
@@ -261,7 +277,7 @@ class TextDialog(wx.Dialog):
             if isinstance(focus, wx.Button) and focus in self.controls:
                 event.Skip()
                 return
-            self._finish(self._buttons[0][1])
+            self._finish(self._buttons[self._default][1])
             return
         if code == wx.WXK_ESCAPE:
             self._finish(self._escape_result)
@@ -287,6 +303,25 @@ def ask(parent, title, text, yes="&Yes", no="&No", field_label="&Question"):
         return dialog.result is True
     finally:
         dialog.Destroy()
+
+
+def ask_password(parent, name, reason):
+    """The password for `name`, or None for Cancel.
+
+    `reason` is the sentence the PDF code raised: that this PDF needs a
+    password, or that the one just tried did not open it. The dialog is
+    native, so its field is found and named here; nothing else names it.
+    """
+    message = "%s %s" % (reason, PASSWORD_ASK % name)
+    with wx.PasswordEntryDialog(parent, message, PASSWORD_TITLE) as dialog:
+        for child in dialog.GetChildren():
+            if isinstance(child, wx.TextCtrl):
+                name_field(child, PASSWORD_FIELD)
+                child.SetFocus()
+                break
+        if dialog.ShowModal() != wx.ID_OK:
+            return None
+        return dialog.GetValue()
 
 
 def unsaved_changes(parent, name):

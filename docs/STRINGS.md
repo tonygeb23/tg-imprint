@@ -387,7 +387,7 @@ and count as strings to approve too.
 ### The first run and the status bar
 
 - First run hint, spoken once through announce_help: "Welcome to TG Imprint.
-  Start typing. F1 lists the keys and Ctrl+Shift+E makes the PDF."
+  F1 lists the keys at any time."
 - Word count field: "No words yet", "1 word", "1,234 words".
 - Paragraph style field: "Normal text", "Heading 1" to "Heading 6",
   "Bullet list item", "Numbered list item", "Quote", "Table cell", "Table
@@ -612,6 +612,83 @@ and count as strings to approve too.
 
 - The introduction, the AltGr paragraph, the lists and tables paragraph
   and every help sentence in the table, all generated from keymap.py.
+
+## 0.3.0, the window
+
+All draft, for Tony to read before this ships.
+
+### The start screen
+
+Buttons, with the line under each one, which is also its accessible
+description:
+
+- "New document": "Start with a blank page."
+- "Open a document": "TG Imprint, Word, Markdown, a web page or a PDF."
+- "Make a PDF accessible": "Bring it in, fix what is left, export a tagged copy."
+- "Analyse a PDF": "Find out what a screen reader will make of it."
+- "Repair a PDF": "Keep the pages as they are and fix what can be fixed."
+- "Fill in a PDF form": "One field at a time, from a list."
+
+Section headings: "Write", "A PDF you already have", "Recent documents".
+With nothing recent: "Documents you open will be listed here."
+
+Said when a key needs a document and none is open: "Nothing is open. Start
+a new document or open one first."
+
+### The Accessibility panel
+
+- Heading: "Accessibility". List name: "Accessibility issues".
+- Summary: "3 to fix, 1 to review", or "Nothing to fix or review", or, before
+  the first look, "Checking the document".
+- Rows: "Fix: <message>", "Review: <message>", or "Nothing left to do."
+- With nothing left: "Every check this panel can make has passed. It cannot
+  judge what the words mean."
+- Button and context menu: "Go to this issue". Context menu: "Hide this panel".
+- Said: "Accessibility panel shown." "Accessibility panel hidden." "Heading 2."
+  (and Picture, Link, Table) "That is no longer in the document." "That one is
+  about the whole document, so there is nowhere to go."
+
+The messages themselves are in doccheck.py, listed under 0.3.0 by whoever owns
+that file.
+
+### New menu items
+
+"Make a PDF accessible...", "Analyse a PDF...", "Repair a PDF...", "Export as"
+with "PDF...", "Word...", "Markdown...", "Plain text...", "Check this document",
+"Accessibility panel", "Next pane", "Previous pane". Their one line help is in
+docs/KEYBOARD.md, generated from keymap.py.
+
+Toolbar: "Check", "Export PDF", and "PDF" when the window is too narrow for
+"Export PDF".
+
+### Analyse, Repair, Export as
+
+- Window titles: "Analyse a PDF", "Analysing a PDF", "Analysis of <name>",
+  "Could not analyse", "Repair a PDF: choose the PDF", "Save the repaired copy
+  as", "Repairing a PDF", "Repaired copy", "Could not repair", "Make a PDF
+  accessible", "Export as Word", "Export as Markdown", "Export as plain text",
+  "Could not write the file".
+- Buttons: "Open it here", "Repair it", "Close", "Open PDF", "Open folder".
+- "Repairing <name>." "Repaired copy written: <name>" "The PDF could not be
+  repaired. <reason>"
+- "A repair writes a new copy and leaves the original alone, so choose a
+  different name."
+- Report: "Repaired copy: <path>", "What changed:", then the changes and the
+  check report.
+- Default file name: "<name> repaired.pdf".
+- "Written: <name>" "That file could not be written. <reason>"
+- File types: "Word documents (*.docx)", "Markdown (*.md)", "Plain text (*.txt)".
+
+### A password
+
+- Title: "Password needed". Field name: "Password".
+- Prompt: the sentence from the PDF code, then "Type the password for <name>."
+- On Cancel: "Nothing was opened."
+
+### A note that changed
+
+The scanned PDF note no longer says there is no OCR: "This PDF has no text
+layer: it is pictures of text, and no words could be read from them."
 
 ## Worker C (describer)
 
@@ -914,3 +991,106 @@ All draft, all Worker C's.
 - The cut off answer sentence in the `ai.py` list above.
 - The whole of "Finding the blanks on a page of a form", which is new work
   and not a review fix.
+
+## 0.3.0, the PDF engine
+
+Every sentence from pdfrepair, pdfimport, pdfanalysis, doccheck and pdfexport that is new or changed in 0.3.0. %s and %d stand for a value filled in when it is shown.
+
+### Opening and repair
+
+- CHANGE_DISPLAY: Viewers now show the title rather than the file name.
+- CHANGE_FIELDS: Named %s.
+- CHANGE_LANG: Set the document language to %s.
+- CHANGE_LANG_DEFAULT: Set the document language to %s, because the pages gave no way to tell. A wrong language makes a voice very hard to follow.
+- CHANGE_LANG_GUESS: Set the document language to %s, a guess from the words on the pages.
+- CHANGE_LINKS: Added a description to %s.
+- CHANGE_NONE: Nothing needed changing.
+- CHANGE_REBUILT: Rebuilt the file's internal structure.
+- CHANGE_TABS: Set the tab order on %s.
+- CHANGE_TITLE: Set the title to "%s", the largest text on the first page.
+- CHANGE_TITLE_FILE: Set the title to the file name, "%s", because nothing readable in the PDF gives one.
+- CHANGE_TITLE_GIVEN: Set the title to "%s".
+- MSG_DAMAGED: This PDF is too damaged to open. Nothing in it could be recovered. Ask the sender for a new copy.
+- MSG_EMPTY: That file is empty. It has nothing in it to open.
+- MSG_MISSING: That file could not be found. It may have been moved or renamed.
+- MSG_NOT_PDF: That file is not a PDF.
+- MSG_NO_PAGES: This PDF has no pages in it.
+- MSG_PASSWORD: This PDF is protected by a password.
+- MSG_WEB_PAGE: That file is a web page saved with a PDF name, probably an error from a failed download. Try downloading it again.
+- MSG_WRONG_PASSWORD: That password did not open the PDF.
+- NOTE_JUNK: This PDF had extra data in front of it, which was ignored.
+- NOTE_LOST: This PDF is damaged and only %d of its %d pages could be recovered. Ask the sender for a new copy.
+- NOTE_REPAIRED: This PDF was damaged. TG Imprint repaired its file structure to open it.
+
+### Bringing a PDF in
+
+- MSG_ALT_MISMATCH: The PDF's tags hold picture descriptions that could not be matched to the pictures on page %s, so they were not used.
+- MSG_ALT_RECOVERED: %s recovered from the PDF's tags. Check each one in Pictures.
+- MSG_CONTROL: %s that no font could show removed.
+- MSG_DECORATIVE: %s marked as decoration in the PDF left out.
+- MSG_FIELDS: This PDF has %s. Bringing it in here removes them, so the PDF you export cannot be filled in. To keep them, use Fill in a PDF form instead.
+- MSG_FURNITURE: %s repeated on the pages left out as a running header or footer.
+- MSG_GARBLED: %s text that reads back as symbols rather than letters, and no text recognition is available here, so it may read as nonsense.
+- MSG_NOTHING: This PDF has no text and no pictures on any page.
+- MSG_NOT_PDF: That file is not a PDF.
+- MSG_OCR_DONE: %s read by text recognition. Check names, numbers and dates against somebody who can see the page, because recognition can get them wrong.
+- MSG_OCR_PROGRESS: Recognising the text on page %d of %d
+- MSG_PASSWORD: This PDF is protected by a password.
+- MSG_PROGRESS: Reading page %d of %d
+- MSG_SCANNED: This PDF is pictures of text, and nothing could be read from it. The text recognition data is missing from this copy of TG Imprint.
+- MSG_SOME_SCANNED: %s no text and may be pictures of text. The text recognition data is missing from this copy of TG Imprint.
+- MSG_TABLES: %s rebuilt from the lines on the page, with the first row as the header row. Check that the first row really is one.
+- MSG_TAGGED: This PDF is tagged. Its headings and lists are re-created here from the text layout, not from its tags, so check them.
+- MSG_TREE: This PDF is tagged, and its headings, lists and tables were read from its tags. Check them.
+
+### Analyse a PDF
+
+- STEP_FORM: Use Fill in a PDF form to fill it in from a list.
+- STEP_FULL: A full PDF/UA verdict needs PAC or veraPDF, and neither can judge what the words mean.
+- STEP_OPEN: Open it in TG Imprint. It reads the pages by text recognition, and from there you can check the text and export a tagged PDF.
+- STEP_PICTURES: Describe the pictures in Pictures once the document is open.
+- STEP_REBUILD: Open it in TG Imprint and export it. That rebuilds it as a tagged PDF, with headings, lists and tables, though the page layout will change.
+- STEP_REPAIR: Or use Repair a PDF to set the title, language, link descriptions and field names and keep every page looking as it does now. It will not add headings or other structure.
+- STEP_RESEND: Ask the sender for a new copy.
+- STEP_XFA: This form type cannot be filled in here. Ask the sender for an ordinary PDF.
+- verdict unreadable: This PDF cannot be opened.
+- verdict empty: This PDF has no content: every page is blank.
+- verdict pictures: A screen reader cannot read this PDF: its pages are pictures, with no readable text.
+- verdict partly: A screen reader can read only part of this PDF.
+- verdict flat: A screen reader can read the words, but there are no headings, lists or other structure to move through.
+- verdict faults: A screen reader can read this PDF and move through its structure, but it has faults.
+- verdict good: This PDF passes every check TG Imprint can make.
+
+### The Accessibility panel
+
+- MSG_AI_PICTURE: Picture %d has a description written by AI that nobody has checked.
+- MSG_EMPTY_HEADING: Heading %d has no text.
+- MSG_FIRST_HEADING: The first heading, "%s", is level %d. Make it level 1.
+- MSG_LINK_ADDRESS: Link %d shows a web address rather than words.
+- MSG_LINK_EMPTY: Link %d has no text.
+- MSG_LINK_TEXT: The link "%s" does not say where it goes.
+- MSG_LONG_CAPS: A paragraph is written in capitals, which some voices spell out: "%s".
+- MSG_NO_HEADINGS: The document has no headings, so nobody can move through it by heading.
+- MSG_NO_LANG: The document has no language. Set one in Document properties.
+- MSG_NO_TITLE: The document has no title. Set one in Document properties.
+- MSG_PICTURE: Picture %d has no description.
+- MSG_RECOVERED_PICTURE: Picture %d has a description from the original PDF that nobody has checked.
+- MSG_SKIP: The heading "%s" is level %d after a level %d heading.
+- MSG_TABLE_CAPTION: Table %d has no caption.
+- MSG_TABLE_HEADER: Table %d has no header row.
+
+### Export
+
+- MSG_DAMAGED: The PDF engine wrote a file that could not be read back as a PDF, so nothing was saved. Try the export again, and if it happens every time, update Microsoft Edge.
+- MSG_EMPTY: There is nothing in this document to export yet. Write something, then export again.
+- MSG_NOT_WRITTEN: The PDF could not be written to %s. Check that the folder allows writing and that the file is not open in another program.
+- MSG_NO_CLAIM: The PDF/UA identifier was left out because %s did not pass: %s. The PDF is still tagged. Fix that and export again to add the claim.
+- MSG_NO_TITLE: The document has no title. The PDF was written without one, and the PDF/UA claim needs one. Set a title in Document properties and export again.
+- MSG_UNTAGGED: The PDF engine wrote a PDF without tags, so nothing was saved. Save as web page keeps everything. Try the export again, and if it happens every time, update Microsoft Edge.
+- MSG_WORK_FAILED: The PDF could not be finished because a temporary file could not be written. The system reported: %s. Nothing was saved. Free some disk space and export again.
+- MSG_WRITE_FAILED: The PDF could not be written to %s. The system reported: %s. The earlier file at that path, if there was one, is untouched.
+- STEP_CHECK_DOCUMENT: Checking the document
+- STEP_CHECK_PDF: Checking the PDF
+- STEP_IDENTIFIER: Adding the PDF/UA identifier
+- STEP_INFO: Writing the document information
+- STEP_LAYOUT: Laying out the pages

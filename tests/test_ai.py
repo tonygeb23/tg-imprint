@@ -226,6 +226,11 @@ for provider in ai.PROVIDERS:
               % (provider, code, word),
               who in said and word in said.lower() and str(code) not in said,
               said[:60])
+said = ai._trouble(urllib.error.HTTPError("u", 402, "m", {}, None), "google")
+check("402 says the account is out of credit, not that it cannot be reached",
+      "out of credit" in said and "reach" not in said, said)
+said = ai._trouble(urllib.error.HTTPError("u", 418, "m", {}, None), "google")
+check("a code with no sentence of its own is not called unreachable", "reach" not in said, said)
 said = ai._trouble(urllib.error.URLError("offline"), "google")
 check("offline: says to check the machine is online, and the document is "
       "unaffected", "online" in said and "document" in said, said[:70])

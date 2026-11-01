@@ -1,0 +1,23 @@
+name: Test report
+description: What you tried and what you heard or saw, good or bad.
+labels: [test report]
+body:
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you tried
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What you heard or saw
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Your setup
+      description: TG Imprint version, screen reader and version, Windows version, display scale or theme.
+    validations:
+      required: true

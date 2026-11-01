@@ -4,7 +4,7 @@ TG Imprint is a small word processor for Windows that writes PDFs screen
 readers can actually read. This is the whole of it: what it does, how to
 do it, and what it will not do in this version.
 
-Version 0.2.0, an open beta. Free, and MIT licensed: the source is at
+Version 0.3.0, an open beta. Free, and MIT licensed: the source is at
 https://github.com/tonygeb23/tg-imprint.
 
 ---
@@ -68,7 +68,11 @@ order. Nothing extra to install, and no cloud service.
 
 ## 3. The first five minutes
 
-Open TG Imprint. You are in an empty document, in the editor, ready to
+Open TG Imprint. You land on the start screen, on the New document button,
+with the other things you might have come for beside it: Open a document,
+Make a PDF accessible, Analyse a PDF, Repair a PDF, Fill in a PDF form, and
+your recent documents. Press Enter on New document and you are in an empty
+document, in the editor, ready to
 type. There is no welcome screen to get past.
 
 Type a line, press Ctrl+Alt+1 to make it a heading. Press Enter and type a
@@ -235,24 +239,83 @@ a heading is really a heading, or whether the reading order makes sense. A
 formal verdict needs PAC or veraPDF, which are separate free tools. This
 check is what can be measured from inside the app.
 
-**Ctrl+Shift+A** runs the same checks on any PDF on your disk, whoever
-made it.
+**Ctrl+Shift+A**, or File, Analyse a PDF, looks at any PDF on your disk,
+whoever made it, and tells you in a sentence what a screen reader will make
+of it: whether its pages are pictures, whether the words read as words, and
+whether there is any structure to move through. Then it says what to do, and
+the check by check report follows. The report opens with focus in it. Open it
+here brings the PDF in as a document, Repair it goes to the repair below, and
+Close changes nothing. Enter in the report means Close.
+
+**File, Repair a PDF** writes a copy and leaves your original alone. It asks
+for the PDF, then where to put the copy, suggesting the same name with
+"repaired" on the end. It sets what can be set without touching a single
+page: the title, the language, the title shown in the window, link
+descriptions, the tab order and form field names. Then it shows what it
+changed and what the checks still find. It does not add structure to a PDF
+with none. For that, use Make a PDF accessible.
+
+A PDF protected by a password asks for it whenever you open, analyse or
+repair one. A wrong password says so and asks again; Cancel leaves everything
+as it was.
+
+### The Accessibility panel
+
+The panel sits beside the document and lists what is left to do, with a line
+above it such as "3 to fix, 1 to review". Fix means it stops the PDF/UA claim.
+Review means a careful author should look and a program cannot decide. It
+looks again a moment after you stop typing. It never moves your focus and
+never speaks up by itself.
+
+**Ctrl+F6** moves between the document, the panel and the toolbar, and
+**Ctrl+Shift+F6** goes the other way. In the list, Enter goes to that heading,
+picture, link or table in the document, or opens Document properties if the
+title or language is what is missing. Escape goes back to the document, and so
+does F6.
+
+The Check button on the toolbar, or Tools, Check this document, looks now and
+puts you in the list. **Ctrl+Shift+L**, or View, Accessibility panel, shows or
+hides it. It is on until you turn it off, and it steps aside in a very narrow
+window, where the same key still brings it back. Drag the line between it and
+the document to change its width; that is remembered.
+
+F6 stays the next heading in the document, because that key came first.
 
 ## 10. Opening a PDF, a Word file, Markdown or text
 
 **Ctrl+O** opens `.imprint` documents, `.html`, `.txt`, `.md`, `.docx` and
 `.pdf`.
 
-Opening a **PDF** pulls the text back out and rebuilds it as a document:
-headings guessed from the type sizes, paragraphs joined across pages,
-lists recognised, links kept, and every picture extracted. Descriptions
+Opening a **PDF** rebuilds it as a document. A PDF that is properly tagged
+is read from its tags: headings, nested lists, tables and their header cells,
+quotes, links and picture descriptions. Any other PDF is worked out from the
+page: headings from the type sizes, paragraphs joined across pages, lists,
+ruled tables with their first row as the header row, two columns read in
+order, and running headers, footers and page numbers left out. Descriptions
 already in a tagged PDF are recovered; the rest are listed as needing one.
 Then you fix what is wrong and export a proper tagged PDF. That is the
-"make this accessible" path, and it is what the Pictures list is for.
+"make this accessible" path, which File, Make a PDF accessible and the start
+screen both lead to. The notes from opening it appear first, and from then on
+the Accessibility panel is what shows what is left to do.
 
-A **scanned** PDF, which is photographs of pages with no text in it, cannot
-be imported. TG Imprint says so rather than producing an empty document.
-There is no text recognition in this beta.
+A **scanned** PDF, which is photographs of pages with no text in it, is read
+by text recognition, on your own machine, with nothing sent anywhere. English
+and Spanish. The same goes for a page that looks fine but reads back as symbols,
+which is a fault in the file that a sighted author never sees. Recognition can
+get names, numbers and dates wrong, so the notes say how many pages were read
+that way, and the export report says it again.
+
+A **damaged** PDF opens with whatever survived, and the notes say what was
+repaired and how many pages were lost. A **password protected** PDF asks for
+the password.
+
+**A form loses its fields** this way, because a rebuilt document has no fields
+in it. The notes say so. To keep a form as a form, use Fill in a PDF form.
+
+**Analyse a PDF** tells you what a screen reader will make of a file and what
+to do next, and changes nothing. **Repair a PDF** writes a copy with what can
+be fixed without touching a page: the title, the language, link descriptions,
+form field names, the tab order. It cannot add headings or other structure.
 
 Opening a **Word** document keeps headings, lists, links, bold and italic,
 tables and pictures with the descriptions Word held. It warns about
@@ -260,6 +323,9 @@ anything it dropped, such as tracked changes, footnotes or text boxes.
 
 Whatever you open, Save writes a TG Imprint document; the original is
 never overwritten.
+
+**File, Export as** writes the document out as a PDF, a Word file, Markdown
+or plain text.
 
 ## 11. Finding your way around a document
 
@@ -338,8 +404,8 @@ a typed or drawn signature, the kind most forms actually accept, and it is
 **not** a cryptographic digital signature. If a form needs the real thing,
 this is not it.
 
-**Two honest limits.** A scanned form, which is a photograph of paper, has
-nothing to read and nothing can be added to it here. And a form that had no
+**Two honest limits.** A scanned form, which is a photograph of paper, can
+be read as a document but cannot be given fields here. And a form that had no
 fields to begin with has no structure inside it to tag, so a filled form is
 not a PDF/UA document and the app claims nothing about it.
 
@@ -359,10 +425,18 @@ at the page size in Document properties.
 - **Focus ring width**, so you can see where you are.
 - **Bold body text**, for when weight helps more than size.
 - **Line spacing**: normal, one and a half, or double.
-- **Toolbar**: icons only, icons with labels, or labels only.
+- **Toolbar**: icons only, icons with labels, or labels only. If the window
+  is too narrow for the words, the less used tools drop theirs, and at the
+  narrowest the bar is icons alone rather than cut tools off the end. Every
+  tool keeps its tooltip. Alignment, underline, strikethrough and quote left
+  the bar in 0.3.0; they are in the Format menu with the same keys.
 
-Windows high contrast is respected in the editor whether or not you choose
-that theme, and the app never fights it.
+The toolbar, the panel, the start screen, the status bar and the title bar
+all follow the theme. The menu bar is the one thing Windows will not let a
+program recolour. Dialogs stay in the Windows colours.
+
+Windows high contrast is respected across the whole window whether or not you
+choose that theme, and the app never fights it.
 
 ## 16. Preferences: speech, page defaults, AI
 
@@ -400,14 +474,16 @@ A copy running from the portable zip updates the same way.
 
 Said plainly, so you can decide whether it is any use to you yet:
 
-- No text recognition, so a scanned PDF cannot be imported, and a
-  scanned form cannot be given fields.
+- A scanned form cannot be given fields.
+- Text recognition reads English and Spanish only.
 - No right to left languages. Arabic and Hebrew are not tested and the
   reading order may be wrong. The export warns you if it sees them.
 - No footnotes, page numbers, columns, headers or footers.
 - No merged table cells.
 - One font per document, and one document open at a time.
-- No RTF, and no Word export. Save as web page covers most of that.
+- No RTF. Word, Markdown and plain text exports hold the words and structure;
+  Markdown and plain text cannot hold pictures, so each picture's description
+  stands in for it.
 - Windows only. There is no Mac version.
 - Tested with NVDA. JAWS and Narrator should work and are not yet tested;
   tell me what you hear.

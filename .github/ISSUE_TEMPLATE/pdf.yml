@@ -1,0 +1,39 @@
+name: A PDF that does not work
+description: A PDF that will not open, reads wrongly, or comes out badly.
+labels: [pdf]
+body:
+  - type: markdown
+    attributes:
+      value: "A public issue is public. Do not attach a private document. Describe it, or attach a small copy with nothing private in it."
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of problem
+      options:
+        - It will not open
+        - The text is wrong or missing
+        - Headings, lists or tables came out wrong
+        - Text recognition read it badly
+        - Repair did the wrong thing
+        - Analyse said the wrong thing
+        - An exported PDF fails a checker or a screen reader
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, what you got, and where the PDF came from, for example a scanner, Word or a council website.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TG Imprint version
+    validations:
+      required: true
+  - type: input
+    id: tool
+    attributes:
+      label: Checker or viewer, if any
+      description: For example PAC 2024, veraPDF, or NVDA in Acrobat.

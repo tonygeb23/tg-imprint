@@ -86,17 +86,32 @@ ENTRIES = [
     E("new", "&New", ("Ctrl+N",), "app", "Start a new, empty document."),
     E("open", "&Open...", ("Ctrl+O",), "app",
       "Open a document: .imprint, .html, .txt, .md, .docx or .pdf."),
+    E("make_accessible", "&Make a PDF accessible...", (), "app",
+      "Bring a PDF in as a document. The Accessibility panel then lists what "
+      "is left to do before you export a tagged copy."),
     E("save", "&Save", ("Ctrl+S",), "app", "Save the document."),
     E("save_as", "Save &As...", ("Ctrl+Shift+S",), "app",
       "Save the document under a new name, as a TG Imprint document."),
     E("save_web_page", "Save as &web page...", (), "app",
       "Write the same document to a .html file any browser can open."),
     E("close_document", "&Close document", ("Ctrl+W",), "app",
-      "Close the document and start an empty one."),
-    E("export_pdf", "&Export PDF...", ("Ctrl+Shift+E",), "app",
+      "Close the document and go back to the start screen."),
+    E("export_pdf", "&PDF...", ("Ctrl+Shift+E",), "app",
       "Make the tagged PDF and check it."),
+    E("export_word", "&Word...", (), "app",
+      "Write the document to a Word file, with its headings, lists and tables."),
+    E("export_markdown", "&Markdown...", (), "app",
+      "Write the document to a Markdown file."),
+    E("export_text", "Plain &text...", (), "app",
+      "Write the words of the document to a plain text file."),
     E("print", "&Print...", ("Ctrl+P",), "app",
       "Make a PDF and send it to the printer."),
+    E("check_pdf", "Anal&yse a PDF...", ("Ctrl+Shift+A",), "app",
+      "Find out what a screen reader will make of any PDF, and what to do "
+      "about it. Nothing is changed."),
+    E("repair_pdf", "Repa&ir a PDF...", (), "app",
+      "Write a copy of a PDF with its title, language, link descriptions and "
+      "field names set. Every page stays exactly as it looks."),
     E("properties", "&Document properties...", ("Alt+Enter",), "app",
       "Properties of the picture at the caret, or of the document: title, "
       "author, language, subject, page size and margins."),
@@ -190,8 +205,9 @@ ENTRIES = [
       "Ask Claude, ChatGPT or Gemini to describe the picture at the caret."),
     E("describe_document", "Describe d&ocument...", ("Ctrl+Shift+D",), "app",
       "Ask an AI service to describe the whole document."),
-    E("check_pdf", "&Check accessibility of a PDF...", ("Ctrl+Shift+A",), "app",
-      "Run the accessibility checks on any PDF and read the report."),
+    E("check_document", "&Check this document", (), "app",
+      "Show the Accessibility panel, check the document now and move to the "
+      "list of what is left to do."),
     E("fill_form", "&Fill in a PDF form...", ("Ctrl+Shift+F",), "app",
       "Open a PDF that has form fields and fill them in from a list, one "
       "field at a time. A PDF with no fields can be looked over for the "
@@ -208,6 +224,15 @@ ENTRIES = [
       "Every heading in a list; Enter jumps to it."),
     E("pictures", "Pi&ctures...", ("Ctrl+Shift+Alt+P",), "app",
       "Every picture with its description, or the ones still needing one."),
+    E("toggle_panel", "Acc&essibility panel", ("Ctrl+Shift+L",), "app",
+      "Show or hide the list of what is left to do in this document.",
+      kind="check"),
+    E("next_pane", "Ne&xt pane", ("Ctrl+F6",), "app",
+      "Move between the document, the Accessibility panel and the toolbar. "
+      "F6 alone is the next heading while you are in the document; in the "
+      "panel or on the toolbar it goes back to the document."),
+    E("previous_pane", "Previo&us pane", ("Ctrl+Shift+F6",), "app",
+      "The same, the other way round."),
     E("zoom_in", "Zoom &in", ("Ctrl+=",), "page", "Make the page larger on screen."),
     E("zoom_out", "Zoom &out", ("Ctrl+-",), "page", "Make the page smaller on screen."),
     E("zoom_reset", "&Actual size", ("Ctrl+0",), "page",
@@ -244,9 +269,12 @@ ENTRIES = [
 #: is a submenu, and "recent" is the Recent documents submenu the window
 #: fills in itself.
 MENUS = [
-    ("&File", ["new", "open", "recent", "-", "save", "save_as",
-               "save_web_page", "close_document", "-", "export_pdf", "print",
-               "-", "properties", "-", "exit"]),
+    ("&File", ["new", "open", "make_accessible", "recent", "-", "save",
+               "save_as", "save_web_page", "close_document", "-",
+               ("&Export as", ["export_pdf", "export_word", "export_markdown",
+                               "export_text"]),
+               "print", "-", "check_pdf", "repair_pdf", "-", "properties", "-",
+               "exit"]),
     ("&Edit", ["undo", "redo", "-", "cut", "copy", "paste", "select_all", "-",
                "find", "replace", "find_next", "find_previous", "-",
                "rename", "delete_object"]),
@@ -260,9 +288,10 @@ MENUS = [
                  "-", "indent", "outdent"]),
     ("&Insert", ["insert_link", "insert_picture", "insert_table", "-",
                  "picture_properties"]),
-    ("&Tools", ["describe_picture", "describe_document", "-", "check_pdf",
-                "fill_form", "-", "preferences"]),
+    ("&Tools", ["describe_picture", "describe_document", "-", "check_document",
+                "check_pdf", "fill_form", "-", "preferences"]),
     ("&View", ["next_heading", "previous_heading", "structure", "pictures",
+               "-", "toggle_panel", "next_pane", "previous_pane",
                "-", "zoom_in", "zoom_out", "zoom_reset", "-",
                ("&Toolbar labels", ["toolbar_icons", "toolbar_icons_labels",
                                     "toolbar_labels"]),
@@ -282,7 +311,9 @@ CONTEXT_MENU = ["undo", "redo", "-", "cut", "copy", "paste", "select_all", "-",
                 ("Ali&gnment", ["align_left", "align_center", "align_right",
                                 "align_justify"]),
                 "-", "insert_link", "insert_picture", "insert_table", "-",
-                "properties"]
+                ("&Export as", ["export_pdf", "export_word", "export_markdown",
+                                "export_text"]),
+                "check_document", "toggle_panel", "-", "properties"]
 
 #: The keys CONVENTIONS.md promises in every TG Studios program, and the
 #: entry that honours each one here.
@@ -484,6 +515,15 @@ def render_markdown():
         "list item; in a table they move between cells, and Tab in the last "
         "cell adds a row. Outside a list or table, Tab leaves the document "
         "for the toolbar, and Shift+Tab comes back.",
+        "",
+        "## Moving between panes",
+        "",
+        "Ctrl+F6 moves from the document to the Accessibility panel, then the "
+        "toolbar, then back. Ctrl+Shift+F6 goes the other way. F6 and Shift+F6 "
+        "stay the next and previous heading while you are in the document, "
+        "because those keys were taught first. In the panel or on the toolbar "
+        "F6 goes straight back to the document, and so does Escape in the "
+        "panel. Enter on an issue goes to that place in the document.",
         "",
         "## Every key",
         "",

@@ -34,6 +34,15 @@ from dataclasses import dataclass, field
 import pikepdf
 
 _LANG_RE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$")
+#: Above this share of unreadable characters a page counts as garbled.
+GARBLED_RATIO = 0.15
+#: ISO 32000-1 14.8.4. Anything else in a tree needs a RoleMap entry.
+STANDARD_TYPES = frozenset(
+    "/" + name for name in (
+        "Document Part Art Sect Div BlockQuote Caption TOC TOCI Index NonStruct "
+        "Private P H H1 H2 H3 H4 H5 H6 L LI Lbl LBody Table TR TH TD THead TBody "
+        "TFoot Span Quote Note Reference BibEntry Code Link Annot Ruby RB RT RP "
+        "Warichu WT WP Figure Formula Form").split())
 HEADING_NAMES = {"/H1": 1, "/H2": 2, "/H3": 3, "/H4": 4, "/H5": 5, "/H6": 6}
 MAX_FORM_DEPTH = 6
 #: A kerning adjustment in a TJ array this large (thousandths of the font
@@ -323,7 +332,7 @@ class TextIndex:
     def _scan(self, index):
         page = self.pdf.pages[index]
         info = {"mcids": {}, "untagged": 0, "chars": 0, "images": 0, "image_marks": [],
-                "error": ""}
+                "image_mcids": {}, "unmarked": 0, "text_sample": [], "error": ""}
         try:
             resources = page.obj.get("/Resources", pikepdf.Dictionary())
             data = _content_bytes(page.obj.get("/Contents"))
@@ -378,6 +387,8 @@ class TextIndex:
             mcid = current_mcid()
             visible = len(text.strip())
             info["chars"] += visible
+            if len(info["text_sample"]) < 4000:
+                info["text_sample"].append(text)
             if not stack:
                 info["untagged"] += visible
             if mcid is not None:
@@ -479,6 +490,9 @@ class TextIndex:
                     pending_space = True
                     line_y = None
                     add_text(decode(last("str") or b""))
+                elif name in _PAINT_OPERATORS:
+                    if not stack:
+                        info["unmarked"] += 1
                 elif name == "Do":
                     xname = last("name")
                     xobject = None
@@ -495,7 +509,12 @@ class TextIndex:
                                 objnum = xobject.objgen[0]
                             except Exception:
                                 objnum = 0
-                            info["image_marks"].append((objnum, current_mcid() is not None))
+                            mcid = current_mcid()
+                            info["image_marks"].append((objnum, mcid is not None))
+                            if mcid is not None:
+                                info["image_mcids"].setdefault(mcid, objnum)
+                            if not stack:
+                                info["unmarked"] += 1
                         elif subtype == "/Form" and depth < MAX_FORM_DEPTH:
                             key = xobject.objgen
                             if key not in visited:
@@ -537,6 +556,11 @@ class TextIndex:
                 array.append(item)
             else:
                 operands.append(item)
+
+
+#: Drawing operators. Outside marked content they are neither tagged nor an
+#: Artifact, which ISO 14289-1 7.1 refuses. "n" draws nothing and is not here.
+_PAINT_OPERATORS = frozenset(("S", "s", "f", "F", "f*", "B", "B*", "b", "b*", "sh"))
 
 
 # ------------------------------------------------------ the tokenizer ---
@@ -886,12 +910,12 @@ def identifier_result(path):
         pdf.close()
 
 
-def check(path):
+def check(path, password=""):
     """Run every check on the PDF at path. Never raises for a bad file: the
     report then holds one failed result that says why."""
     report = Report(path=path)
     try:
-        pdf = pikepdf.open(path)
+        pdf = pikepdf.open(path, password=password)
     except pikepdf.PasswordError:
         report.results.append(CheckResult(
             "File readable", False,
@@ -931,7 +955,7 @@ def _run_checks(pdf, report):
     add(CheckResult("Tagged PDF", marked,
                     "The file says it is tagged." if marked else
                     "The file does not say it is tagged (no MarkInfo). A screen reader "
-                    "gets no structure from it. Export it again from TG Imprint.",
+                    "gets no structure from it. Open it in TG Imprint and export it again.",
                     key="tagged"))
 
     # 2. Structure tree
@@ -940,7 +964,7 @@ def _run_checks(pdf, report):
     add(CheckResult("Structure tree", has_tree,
                     ("The tree holds %s." % _n(len(elements), "element", "elements")) if has_tree else
                     "There is no structure tree, so headings, lists, links and pictures "
-                    "have no roles. Export it again from TG Imprint.",
+                    "have no roles. Open it in TG Imprint and export it again.",
                     key="tree"))
 
     # 3. Language
@@ -970,7 +994,7 @@ def _run_checks(pdf, report):
     add(CheckResult("Title shown in the window", display,
                     "Viewers show the document title rather than the file name." if display else
                     "Viewers will show the file name instead of the title (DisplayDocTitle "
-                    "is off). Export it again from TG Imprint.",
+                    "is off). Open it in TG Imprint and export it again.",
                     key="display_title"))
 
     # 5. Title. Info is read before the XMP is opened, on purpose.
@@ -985,7 +1009,7 @@ def _run_checks(pdf, report):
     elif info_title:
         add(CheckResult("Title", False,
                         "The title \"%s\" is in the file's information but not in its "
-                        "XMP metadata, which PDF/UA requires. Export it again from TG Imprint."
+                        "XMP metadata, which PDF/UA requires. Open it in TG Imprint and export it again."
                         % _short(info_title, 60), key="title"))
     else:
         add(CheckResult("Title", False,
@@ -1066,7 +1090,7 @@ def _run_checks(pdf, report):
     elif not_embedded:
         add(CheckResult("Fonts embedded", False,
                         "%s not embedded: %s. Every reader needs the fonts inside the file. "
-                        "Export it again from TG Imprint."
+                        "Open it in TG Imprint and export it again."
                         % (_n(len(not_embedded), "font is", "fonts are"), ", ".join(not_embedded[:6])),
                         key="fonts"))
     else:
@@ -1118,7 +1142,7 @@ def _run_checks(pdf, report):
     elif links_without_parent:
         add(CheckResult("Links tagged", False,
                         "%s of %d %s not in the structure tree, so a screen reader cannot "
-                        "reach %s. Export it again from TG Imprint."
+                        "reach %s. Open it in TG Imprint and export it again."
                         % (links_without_parent, links,
                            "link is" if links_without_parent == 1 else "links are",
                            "it" if links_without_parent == 1 else "them"),
@@ -1168,8 +1192,8 @@ def _run_checks(pdf, report):
     elif images:
         add(CheckResult("Text layer", False,
                         "This PDF is pictures of text. There is no text for a screen reader "
-                        "to read, and TG Imprint has no text recognition in this release. "
-                        "Run OCR in another program first.", key="text"))
+                        "to read. Open it in TG Imprint, which reads the pages by text "
+                        "recognition.", key="text"))
     else:
         add(CheckResult("Text layer", False,
                         "The PDF has no text at all.", key="text"))
@@ -1177,7 +1201,7 @@ def _run_checks(pdf, report):
         add(CheckResult("All text tagged", untagged == 0,
                         "Every piece of text is inside tagged content." if untagged == 0 else
                         "%s of text %s outside any tag, where a screen reader may skip "
-                        "%s. Export it again from TG Imprint."
+                        "%s. Open it in TG Imprint and export it again."
                         % (_n(untagged, "character", "characters"),
                            "is" if untagged == 1 else "are", "it" if untagged == 1 else "them"),
                         key="untagged"))
@@ -1198,6 +1222,222 @@ def _run_checks(pdf, report):
                         "%s carries a label and a body." % ("The 1 list item" if len(items) == 1
                                                              else "Each of the %d list items" % len(items)),
                         warn_only=True, key="lbody"))
+
+    _check_roles(root, elements, add)
+    _check_drawing(index, len(pdf.pages), add)
+    _check_tables(elements, add)
+    _check_fields(pdf, root, add)
+    _check_other_annotations(pdf, add)
+    _check_unicode(pdf, index, total_chars, add)
+    _check_permissions(pdf, add)
+
+
+def _check_roles(root, elements, add):
+    """Every structure type is standard or mapped to a standard one, and
+    the file has not marked its own tags as suspect."""
+    if not elements:
+        return
+    suspects = False
+    try:
+        mark_info = root.get("/MarkInfo")
+        suspects = bool(mark_info is not None and mark_info.get("/Suspects", False))
+    except Exception:
+        suspects = False
+    add(CheckResult("Tags trusted", not suspects,
+                    "The file does not flag its own tags." if not suspects else
+                    "The file says its own tags may be wrong (Suspects). Treat the headings "
+                    "and lists in it as guesses.", key="suspects"))
+    unknown = sorted({e.kind for e in elements if e.kind and e.kind not in STANDARD_TYPES})
+    add(CheckResult("Structure types", not unknown,
+                    "Every element uses a standard type." if not unknown else
+                    "%s not standard and %s no mapping to one: %s. A screen reader may not "
+                    "know what %s."
+                    % (_n(len(unknown), "element type is", "element types are"),
+                       "has" if len(unknown) == 1 else "have",
+                       ", ".join(k.lstrip("/") for k in unknown[:6]),
+                       "it is" if len(unknown) == 1 else "they are"),
+                    key="roles"))
+
+
+def _check_drawing(index, pages, add):
+    unmarked = 0
+    for number in range(pages):
+        unmarked += index.page(number)["unmarked"]
+    add(CheckResult("Drawing marked", unmarked == 0,
+                    "All drawing is either tagged or marked as decoration." if unmarked == 0 else
+                    "%s of drawing %s neither tagged nor marked as decoration."
+                    % (_n(unmarked, "piece", "pieces"), "is" if unmarked == 1 else "are"),
+                    key="artifacts"))
+
+
+def _check_tables(elements, add):
+    tables = [e for e in elements if e.kind == "/Table"]
+    if not tables:
+        return
+
+    def has_header(table):
+        stack = list(table.children)
+        while stack:
+            item = stack.pop()
+            if item.kind == "/TH":
+                return True
+            stack.extend(item.children)
+        return False
+
+    bare = sum(1 for table in tables if not has_header(table))
+    add(CheckResult("Table headers", bare == 0,
+                    ("%s has header cells." % ("The 1 table" if len(tables) == 1
+                                               else "Each of the %d tables" % len(tables)))
+                    if bare == 0 else
+                    "%d of %s no header cells, so a screen reader cannot say which column "
+                    "a value belongs to."
+                    % (bare, _n(len(tables), "table has", "tables have")), key="table_headers"))
+
+
+def _walk_fields(pdf):
+    """(widget, its name for a screen reader, inherited) on every page."""
+    for page in pdf.pages:
+        annots = page.obj.get("/Annots")
+        if not isinstance(annots, pikepdf.Array):
+            continue
+        for annot in annots:
+            if isinstance(annot, pikepdf.Dictionary) and str(annot.get("/Subtype", "")) == "/Widget":
+                tip = ""
+                node = annot
+                for _depth in range(8):
+                    if not isinstance(node, pikepdf.Dictionary):
+                        break
+                    tip = str(node.get("/TU", "") or "").strip()
+                    if tip:
+                        break
+                    node = node.get("/Parent")
+                yield annot, tip
+
+
+def _check_fields(pdf, root, add):
+    acro = root.get("/AcroForm")
+    if isinstance(acro, pikepdf.Dictionary) and "/XFA" in acro:
+        add(CheckResult("Form type", False,
+                        "This is an XFA form. Most PDF readers and screen readers cannot use "
+                        "one, and PDF/UA does not allow it. Ask the sender for an ordinary PDF.",
+                        key="xfa"))
+    widgets = list(_walk_fields(pdf))
+    if not widgets:
+        return
+    unnamed = sum(1 for _widget, tip in widgets if not tip)
+    add(CheckResult("Form fields named", unnamed == 0,
+                    ("%s a name a screen reader can read."
+                     % ("The 1 field has" if len(widgets) == 1 else "All %d fields have" % len(widgets)))
+                    if unnamed == 0 else
+                    "%d of %s no name, so a screen reader announces nothing useful. TG Imprint "
+                    "can add names with Repair a PDF."
+                    % (unnamed, _n(len(widgets), "field has", "fields have")), key="fields"))
+    untagged = sum(1 for widget, _tip in widgets if "/StructParent" not in widget)
+    add(CheckResult("Form fields tagged", untagged == 0,
+                    "Every field is in the structure tree." if untagged == 0 else
+                    "%d of %s not in the structure tree."
+                    % (untagged, _n(len(widgets), "field is", "fields are")), key="fields_tagged"))
+
+
+def _check_other_annotations(pdf, add):
+    total = bare = 0
+    for page in pdf.pages:
+        annots = page.obj.get("/Annots")
+        if not isinstance(annots, pikepdf.Array):
+            continue
+        for annot in annots:
+            if not isinstance(annot, pikepdf.Dictionary):
+                continue
+            if str(annot.get("/Subtype", "")) in ("/Link", "/Widget", "/Popup", "/PrinterMark"):
+                continue
+            total += 1
+            if not str(annot.get("/Contents", "") or "").strip():
+                bare += 1
+    if total:
+        add(CheckResult("Comments described", bare == 0,
+                        "Every comment carries a description." if bare == 0 else
+                        "%d of %s no description."
+                        % (bare, _n(total, "comment has", "comments have")),
+                        key="annotations"))
+
+
+def _check_unicode(pdf, index, total_chars, add):
+    """Text a program can read back as real letters. This is the fault a
+    sighted author never sees: the page looks perfect and NVDA reads
+    nonsense."""
+    if not total_chars:
+        return
+    missing = sorted({name for name, ok in _fonts_unicode(pdf) if not ok})
+    add(CheckResult("Fonts map to letters", not missing,
+                    "Every font says which letters its shapes are." if not missing else
+                    "%s no map from shapes to letters: %s. A screen reader may read gibberish "
+                    "from %s." % (_n(len(missing), "font has", "fonts have"),
+                                  ", ".join(missing[:4]), "it" if len(missing) == 1 else "them"),
+                    key="unicode"))
+    sample = []
+    for number in range(min(len(pdf.pages), 40)):
+        sample.extend(index.page(number).get("text_sample", ()))
+    bad = text_quality("".join(sample))
+    add(CheckResult("Text readable", bad < GARBLED_RATIO,
+                    "The text reads back as real letters." if bad < GARBLED_RATIO else
+                    "About %d percent of the text reads back as symbols, not letters, so a "
+                    "screen reader will read nonsense. Open the PDF in TG Imprint and it will "
+                    "read the page by text recognition instead." % round(bad * 100),
+                    key="garbled"))
+
+
+def _fonts_unicode(pdf):
+    seen = {}
+    for page in pdf.pages:
+        resources = page.obj.get("/Resources")
+        fonts = resources.get("/Font") if isinstance(resources, pikepdf.Dictionary) else None
+        if not isinstance(fonts, pikepdf.Dictionary):
+            continue
+        for _key, font in fonts.items():
+            if not isinstance(font, pikepdf.Dictionary):
+                continue
+            ident = font.objgen if font.objgen != (0, 0) else id(font)
+            if ident in seen:
+                continue
+            name, _embedded = _font_embedded(font)
+            subtype = str(font.get("/Subtype", ""))
+            encoding = font.get("/Encoding")
+            named = isinstance(encoding, pikepdf.Name) and str(encoding) in (
+                "/WinAnsiEncoding", "/MacRomanEncoding", "/StandardEncoding")
+            mapped = "/ToUnicode" in font or named or (
+                subtype in ("/Type1", "/TrueType") and encoding is None
+                and name.split(",")[0].split("-")[0] in ("Helvetica", "Times", "Courier"))
+            seen[ident] = (name or "unnamed", mapped)
+    return list(seen.values())
+
+
+def text_quality(text):
+    """The share of the text, 0 to 1, that is not something a person could
+    read: private use, replacement and control characters. Spaces do not
+    count either way."""
+    body = [c for c in text if not c.isspace()]
+    if not body:
+        return 0.0
+    bad = 0
+    for char in body:
+        code = ord(char)
+        if code == 0xFFFD or 0xE000 <= code <= 0xF8FF or code < 32 or 0x7F <= code < 0xA0:
+            bad += 1
+    return bad / len(body)
+
+
+def _check_permissions(pdf, add):
+    if not pdf.is_encrypted:
+        return
+    try:
+        allowed = bool(pdf.allow.accessibility) or bool(pdf.allow.extract)
+    except Exception:
+        allowed = True
+    add(CheckResult("Permissions", allowed,
+                    "The file's security lets assistive technology read it." if allowed else
+                    "The file's security forbids copying text for accessibility, which "
+                    "PDF/UA does not allow. Some screen readers will refuse to read it.",
+                    key="permissions"))
 
 
 # ---------------------------------------------------------- for the export ---

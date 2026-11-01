@@ -25,6 +25,7 @@ Two things it gets right that the first round did not:
 import ctypes
 import ctypes.wintypes
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -60,9 +61,9 @@ SHOTS = os.path.join(HERE, "docs", "screenshots")
 import wx  # noqa: E402
 
 from tgimprint import constants as C  # noqa: E402
-from tgimprint import updatedialog  # noqa: E402
+from tgimprint import editor_page, pdfengine, updatedialog  # noqa: E402
 from tgimprint.settings import Settings  # noqa: E402
-from tgimprint.ui import dialogs, forms_dialog, keymap, main_window  # noqa: E402
+from tgimprint.ui import dialogs, forms_dialog, icons, keymap, main_window, theme  # noqa: E402
 from tgimprint.ui.doc_properties_dialog import DocPropertiesDialog  # noqa: E402
 from tgimprint.ui.find_dialog import FindDialog  # noqa: E402
 from tgimprint.ui.hyperlink_dialog import LinkDialog  # noqa: E402
@@ -81,7 +82,12 @@ BODY = ("<h1>The Ridgeway in a day</h1><p>Eighty seven miles of chalk track, "
         "<h2>What went in the pack</h2><ul><li>Two litres of water</li>"
         "<li>A paper map, because the phone died at Ogbourne</li></ul>"
         "<p>The first climb out of Avebury is the one everybody warns you "
-        "about, and everybody is right about it.</p>")
+        "about, and everybody is right about it. The route map is "
+        "<a href=\"https://example.com/map\">here</a>.</p>"
+        "<figure class=\"width-half place-centre\"><img src=\"" + DOT + "\" alt=\"\" "
+        "data-needs-alt=\"1\"></figure>"
+        "<h4>Miles walked</h4><table><tbody><tr><td>Avebury</td><td>0</td></tr>"
+        "<tr><td>Ogbourne</td><td>9</td></tr></tbody></table>")
 
 
 class DWM(ctypes.Structure):
@@ -99,7 +105,13 @@ def visible_rect(window):
     except Exception:
         ok = -1
     if ok == 0 and box.right > box.left:
-        return wx.Rect(box.left, box.top, box.right - box.left, box.bottom - box.top)
+        # The DWM answers in real pixels even to a process that declared
+        # nothing, and this desktop runs at 150 percent, so the 100 percent
+        # run has to bring the answer back to the pixels it lives in.
+        scale = 1.5 if SCALE == "100" else 1.0
+        return wx.Rect(int(box.left / scale), int(box.top / scale),
+                       int((box.right - box.left) / scale),
+                       int((box.bottom - box.top) / scale))
     return window.GetScreenRect()
 
 
@@ -218,6 +230,61 @@ def ours(window, rect):
     return True
 
 
+def screen_is_off(rect):
+    """True when a copy of the screen comes back all black, which is what a
+    locked or sleeping desktop gives."""
+    probe = wx.Bitmap(64, 64)
+    memory = wx.MemoryDC(probe)
+    memory.Blit(0, 0, 64, 64, wx.ScreenDC(), rect.x + rect.width // 2, rect.y + 8)
+    memory.SelectObject(wx.NullBitmap)
+    image = probe.ConvertToImage()
+    return not any(image.GetData())
+
+
+def render_page(width, height):
+    """The real editor page, drawn by headless Edge at the WebView's size and
+    scale, focused as it would be. Returns a wx.Bitmap or None."""
+    scale = frame.GetDPIScaleFactor()
+    nonce = "shot"
+    body = frame.editor.shot_body if hasattr(frame.editor, "shot_body") else BODY
+    html = editor_page.build_page(keymap.page_bindings(), keymap.DENY_CHORDS,
+                                  lang="en-US", page=frame._document_page(), body_html=body,
+                                  display=frame.display_settings(), nonce=nonce)
+    html = html.replace("</body>", '<script nonce="%s">document.getElementById("editor")'
+                        '.focus();</script></body>' % nonce)
+    folder = tempfile.mkdtemp(prefix="tgimprint-shot-page-")
+    page = os.path.join(folder, "page.html")
+    picture = os.path.join(folder, "page.png")
+    with open(page, "w", encoding="utf-8") as fh:
+        fh.write(html)
+    edge = pdfengine.engines()[0].path
+    subprocess.run([edge, "--headless=new", "--disable-gpu", "--hide-scrollbars",
+                    "--user-data-dir=" + os.path.join(folder, "profile"),
+                    "--force-device-scale-factor=%s" % scale,
+                    "--window-size=%d,%d" % (round(width / scale), round(height / scale)),
+                    "--virtual-time-budget=1500", "--screenshot=" + picture,
+                    "file:///" + page.replace(os.sep, "/")],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40)
+    if not os.path.exists(picture):
+        print("  headless Edge wrote no picture")
+        return None
+    return wx.Image(picture).Size(wx.Size(width, height), wx.Point(0, 0), 255, 255, 255)
+
+
+def composite(window, rect):
+    bitmap = print_window(window, rect)
+    web = frame.editor.web
+    if frame.start_showing() or not web.IsShownOnScreen():
+        return bitmap
+    where = web.GetScreenRect()
+    page = render_page(where.width, where.height)
+    if page is None:
+        return bitmap
+    whole = bitmap.ConvertToImage()
+    whole.Paste(page, where.x - rect.x, where.y - rect.y)
+    return wx.Bitmap(whole)
+
+
 def shoot(window, name, screen=False):
     """`screen` is for the main window: the WebView2 surface is composed by
     another process and draws nothing into a PrintWindow bitmap, so the
@@ -228,6 +295,16 @@ def shoot(window, name, screen=False):
     settle(window)
     paint(window, skip_webview=screen)
     rect = visible_rect(window)
+    if screen and screen_is_off(rect):
+        # Nothing can be copied off a locked screen. The chrome comes from
+        # the window itself and the page from the same engine at the same
+        # size and scale. Said out loud, because it is not quite a screenshot.
+        bitmap = composite(window, rect)
+        out = os.path.join(SHOTS, "%s-%s.png" % (name, SCALE))
+        on_top(window, False)
+        bitmap.SaveFile(out, wx.BITMAP_TYPE_PNG)
+        print("  %-34s %4d x %4d  composite, the screen is off" % (name, rect.width, rect.height))
+        return
     bitmap = None if screen else print_window(window, rect)
     if bitmap is None or blank(bitmap):
         clear = False
@@ -301,6 +378,10 @@ class Proposal:
 app = wx.App(False)
 settings = Settings(os.path.join(tempfile.mkdtemp(), "settings.json"))
 settings["first_run_done"] = True
+_docs = tempfile.mkdtemp(prefix="tgimprint-shot-docs-")
+for _name in ("Council letter.pdf", "Annual report 2026.imprint", "The Ridgeway in a day.imprint"):
+    open(os.path.join(_docs, _name), "w").close()
+    settings.remember(os.path.join(_docs, _name))
 frame = main_window.MainFrame(settings=settings)
 # A window that runs off the top of the screen loses its title bar out of
 # every capture, so the size is whatever fits this display with room to
@@ -337,7 +418,46 @@ def start():
 
 
 step(start)
+step(lambda: frame._panel_dirty(0))
+step(lambda: frame.editor.focus())
 step(lambda: shoot(frame, "main-window", screen=True))
+
+
+def icon_sheet():
+    if WANTED and "icons" not in WANTED:
+        return
+    for pal_name, name in (("normal", "icons"), ("dark", "icons-dark"),
+                           ("yellow_on_black", "icons-yellow-on-black")):
+        pal = theme.palette(pal_name)
+        size = 48 if SCALE == "150" else 32
+        bitmap = icons.sheet(size, columns=9, pal=pal)
+        bitmap.SaveFile(os.path.join(SHOTS, "%s-%s.png" % (name, SCALE)), wx.BITMAP_TYPE_PNG)
+
+
+step(icon_sheet)
+step(lambda: frame.show_start())
+step(lambda: frame._refocus())
+step(lambda: shoot(frame, "start-screen", screen=True))
+step(lambda: frame.show_editor())
+step(lambda: frame.panel.focus_list())
+step(lambda: shoot(frame, "panel-focused", screen=True))
+step(lambda: frame.editor.focus())
+
+
+def narrow(on):
+    if on:
+        frame._saved_size = frame.GetSize()
+        frame.SetSize(frame.FromDIP(wx.Size(700, 600)))
+    else:
+        frame.SetSize(frame._saved_size)
+        frame.Centre()
+
+
+step(lambda: narrow(True))
+step(lambda: wx.CallLater(400, lambda: None))
+step(lambda: shoot(frame, "narrow-window", screen=True))
+step(lambda: narrow(False))
+step(lambda: wx.CallLater(400, lambda: None))
 
 for _mode, _name in (("icons", "toolbar-icons"), ("icons_labels", "toolbar-icons-labels"),
                      ("labels", "toolbar-labels")):
@@ -351,9 +471,17 @@ dialog_step(lambda: PreferencesDialog(frame, frame, settings, page="Display"),
             "preferences-display")
 for _theme, _name in (("dark", "editor-dark"), ("yellow_on_black", "editor-yellow-on-black")):
     step(lambda t=_theme: (frame.settings.__setitem__("page_theme", t),
-                           frame.settings.__setitem__("editor_zoom", 130),
+                           frame.settings.__setitem__("editor_zoom", 100),
                            frame.apply_display()))
     step(lambda n=_name: shoot(frame, n, screen=True))
+    step(lambda: frame.show_start())
+    step(lambda: frame._refocus())
+    step(lambda n=_name: shoot(frame, n.replace("editor-", "start-"), screen=True))
+    step(lambda: frame.show_editor())
+    step(lambda: frame.editor.focus())
+step(lambda: (frame.settings.__setitem__("page_theme", "high_contrast"),
+              frame.apply_display()))
+step(lambda: shoot(frame, "editor-system-colours", screen=True))
 step(lambda: (frame.settings.__setitem__("page_theme", "normal"),
               frame.settings.__setitem__("editor_zoom", 100),
               frame.apply_display()))

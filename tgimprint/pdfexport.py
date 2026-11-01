@@ -49,6 +49,7 @@ temp path and no library words reach the user.
 import datetime
 import html
 import os
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -56,7 +57,7 @@ from dataclasses import dataclass, field
 import pikepdf
 
 from . import constants as C
-from . import htmlclean, pdfcheck, pdfengine
+from . import htmlclean, pdfcheck, pdfengine, pdftree
 from .pdfengine import EngineError  # noqa: F401  re-exported for callers
 
 DEFAULT_LANG = "en-US"
@@ -72,6 +73,7 @@ MSG_NO_TITLE = ("The document has no title. The PDF was written without one, and
                 "export again.")
 MSG_NO_CLAIM = ("The PDF/UA identifier was left out because %s did not pass: %s. The PDF "
                 "is still tagged. Fix that and export again to add the claim.")
+MSG_EMPTY = "There is nothing in this document to export yet. Write something, then export again."
 MSG_NOT_WRITTEN = ("The PDF could not be written to %s. Check that the folder allows "
                    "writing and that the file is not open in another program.")
 MSG_WRITE_FAILED = ("The PDF could not be written to %s. The system reported: %s. The "
@@ -276,6 +278,8 @@ def _patch_pdf(source, target, settings, producer, creator, when):
         info["/CreationDate"] = pikepdf.String(_pdf_date(when))
         info["/ModDate"] = pikepdf.String(_pdf_date(when))
 
+        pdftree.finish(pdf)
+
         # Every link annotation carries its text, so a screen reader that
         # reads the annotation rather than the tagged text says the words.
         for annot, text, uri in pdfcheck.link_descriptions(pdf):
@@ -384,6 +388,8 @@ def export_html(body_html, out_path, meta, progress=None):
         warnings.append(MSG_NO_TITLE)
     clean_body, clean_warnings = htmlclean.normalise(body_html, for_export=True)
     warnings.extend(clean_warnings)
+    if not re.sub(r"<[^>]+>", "", clean_body).strip() and "<img" not in clean_body:
+        raise EngineError(MSG_EMPTY)
     page = build_page(clean_body, settings)
 
     out_path = os.path.abspath(out_path)

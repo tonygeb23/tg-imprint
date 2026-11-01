@@ -63,16 +63,19 @@ elapsed = time.perf_counter() - started
 print("  the check took %.2f seconds" % elapsed)
 check("every check passes", report.passed, report.failed_names())
 check("the gate is open", report.pdfua_gate)
-check("sixteen checks", len(report.results) == 16, len(report.results))
-check("the score counts what passed", report.score == (15, 16), report.score)
-check("the one warning is the engine's LBody gap", report.warnings == 1
-      and result(report, "lbody").warn_only and not result(report, "lbody").passed)
+CHECK_COUNT = len(report.results)
+check("at least the twenty two checks of 0.3.0", CHECK_COUNT >= 22, CHECK_COUNT)
+check("the score counts what passed", report.score == (CHECK_COUNT, CHECK_COUNT), report.score)
+check("no warnings: every list item now has an LBody", report.warnings == 0
+      and result(report, "lbody").passed)
+for key in ("roles", "artifacts", "suspects", "unicode", "garbled"):
+    check("the %s check ran and passed" % key, result(report, key).passed)
 check("every check has a key, a name and a detail sentence",
       all(r.key and r.name and r.detail.endswith(".") for r in report.results))
 text = report.format_report()
 lines = text.splitlines()
 check("format_report is one line per check, plus header and footer",
-      len(lines) == 2 + 16 + 1, len(lines))
+      len(lines) == 2 + CHECK_COUNT + 1, len(lines))
 check("every check line starts with PASS, FAIL or WARN",
       all(re.match(r"^(PASS|FAIL|WARN): ", line) for line in lines[2:-1]))
 check("no markdown in the report", not any(ch in text for ch in "#*|`"))
@@ -90,7 +93,7 @@ def strip_markinfo(pdf):
 path = broken("no-markinfo.pdf", strip_markinfo)
 report = pdfcheck.check(path)
 check("stripping MarkInfo fails Tagged PDF", not result(report, "tagged").passed and not report.pdfua_gate)
-check("and the other checks still run", result(report, "figures").passed and len(report.results) == 16)
+check("and the other checks still run", result(report, "figures").passed and len(report.results) == CHECK_COUNT)
 
 
 def remove_alt(pdf):

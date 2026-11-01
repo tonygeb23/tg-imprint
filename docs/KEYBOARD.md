@@ -12,18 +12,28 @@ Ctrl+Alt+1 to Ctrl+Alt+6 set heading levels 1 to 6, Ctrl+Alt+0 makes normal text
 
 Enter at the end of a heading starts a normal paragraph. Enter on an empty list item leaves the list. Backspace at the start of a list item takes it out of the list. Tab and Shift+Tab nest and unnest a list item; in a table they move between cells, and Tab in the last cell adds a row. Outside a list or table, Tab leaves the document for the toolbar, and Shift+Tab comes back.
 
+## Moving between panes
+
+Ctrl+F6 moves from the document to the Accessibility panel, then the toolbar, then back. Ctrl+Shift+F6 goes the other way. F6 and Shift+F6 stay the next and previous heading while you are in the document, because those keys were taught first. In the panel or on the toolbar F6 goes straight back to the document, and so does Escape in the panel. Enter on an issue goes to that place in the document.
+
 ## Every key
 
 | Menu | Command | Keys | What it does |
 |---|---|---|---|
 | File | New | Ctrl+N | Start a new, empty document. |
 | File | Open... | Ctrl+O | Open a document: .imprint, .html, .txt, .md, .docx or .pdf. |
+| File | Make a PDF accessible... |  | Bring a PDF in as a document. The Accessibility panel then lists what is left to do before you export a tagged copy. |
 | File | Save | Ctrl+S | Save the document. |
 | File | Save As... | Ctrl+Shift+S | Save the document under a new name, as a TG Imprint document. |
 | File | Save as web page... |  | Write the same document to a .html file any browser can open. |
-| File | Close document | Ctrl+W | Close the document and start an empty one. |
-| File | Export PDF... | Ctrl+Shift+E | Make the tagged PDF and check it. |
+| File | Close document | Ctrl+W | Close the document and go back to the start screen. |
+| File, Export as | PDF... | Ctrl+Shift+E | Make the tagged PDF and check it. |
+| File, Export as | Word... |  | Write the document to a Word file, with its headings, lists and tables. |
+| File, Export as | Markdown... |  | Write the document to a Markdown file. |
+| File, Export as | Plain text... |  | Write the words of the document to a plain text file. |
 | File | Print... | Ctrl+P | Make a PDF and send it to the printer. |
+| File | Analyse a PDF... | Ctrl+Shift+A | Find out what a screen reader will make of any PDF, and what to do about it. Nothing is changed. |
+| File | Repair a PDF... |  | Write a copy of a PDF with its title, language, link descriptions and field names set. Every page stays exactly as it looks. |
 | File | Document properties... | Alt+Enter | Properties of the picture at the caret, or of the document: title, author, language, subject, page size and margins. |
 | File | Exit | Alt+F4 | Close TG Imprint. |
 | Edit | Undo | Ctrl+Z | Undo the last change. |
@@ -65,13 +75,17 @@ Enter at the end of a heading starts a normal paragraph. Enter on an empty list 
 | Insert | Picture properties... |  | Description, caption, width and placement of the picture at the caret. Alt+Enter opens this when the caret is on a picture. |
 | Tools | Describe picture... | Ctrl+D | Ask Claude, ChatGPT or Gemini to describe the picture at the caret. |
 | Tools | Describe document... | Ctrl+Shift+D | Ask an AI service to describe the whole document. |
-| Tools | Check accessibility of a PDF... | Ctrl+Shift+A | Run the accessibility checks on any PDF and read the report. |
+| Tools | Check this document |  | Show the Accessibility panel, check the document now and move to the list of what is left to do. |
+| Tools | Analyse a PDF... | Ctrl+Shift+A | Find out what a screen reader will make of any PDF, and what to do about it. Nothing is changed. |
 | Tools | Fill in a PDF form... | Ctrl+Shift+F | Open a PDF that has form fields and fill them in from a list, one field at a time. A PDF with no fields can be looked over for the blanks first. |
 | Tools | Preferences... | Ctrl+, | Spoken feedback, document defaults, the screen and the AI services. |
 | View | Next heading | F6 | Move the caret to the next heading. |
 | View | Previous heading | Shift+F6 | Move the caret to the previous heading. |
 | View | Structure navigator... | Alt+F6 | Every heading in a list; Enter jumps to it. |
 | View | Pictures... | Ctrl+Shift+Alt+P | Every picture with its description, or the ones still needing one. |
+| View | Accessibility panel | Ctrl+Shift+L | Show or hide the list of what is left to do in this document. |
+| View | Next pane | Ctrl+F6 | Move between the document, the Accessibility panel and the toolbar. F6 alone is the next heading while you are in the document; in the panel or on the toolbar it goes back to the document. |
+| View | Previous pane | Ctrl+Shift+F6 | The same, the other way round. |
 | View | Zoom in | Ctrl+= | Make the page larger on screen. |
 | View | Zoom out | Ctrl+- | Make the page smaller on screen. |
 | View | Actual size | Ctrl+0 | Show the page at its normal size, one hundred percent. |

@@ -148,6 +148,9 @@ def build_executable():
         "--specpath", WORK,
         # The WebView2 loader, next to wx's own DLLs. See webview2_loader.
         "--add-binary", loader + os.pathsep + "wx",
+        # The text recognition language data. Fixed between releases, so
+        # Velopack's delta for an update does not carry it again.
+        "--add-data", os.path.join(HERE, "assets", "tessdata") + os.pathsep + "tessdata",
         # Native code beside these packages that PyInstaller will not find by
         # walking imports alone. pikepdf carries qpdf; PyMuPDF carries
         # MuPDF; accessible_output2 carries the screen reader bridges;

@@ -89,11 +89,18 @@ check("progress reported every step in order", steps == [
     pdfexport.STEP_CHECK_DOCUMENT, pdfexport.STEP_LAYOUT, pdfexport.STEP_INFO,
     pdfexport.STEP_CHECK_PDF, pdfexport.STEP_IDENTIFIER], steps)
 
+try:
+    pdfexport.export_html("<p></p>", os.path.join(WORK, "empty.pdf"), META)
+    check("an empty document is refused", False)
+except pdfexport.EngineError as exc:
+    check("an empty document says so, and blames nobody", str(exc) == pdfexport.MSG_EMPTY, str(exc))
+
 print("\nThe structure tree, read back with pikepdf")
 tree = elements(out)
 kinds = [kind for kind, _text, _alt, _children in tree]
-for wanted in ("/Document", "/H1", "/H2", "/H3", "/P", "/Strong", "/Em", "/Code", "/Link",
-               "/L", "/LI", "/Lbl", "/BlockQuote", "/Figure", "/Caption", "/Table", "/TR",
+# Strong and Em read as Span here, through the RoleMap pdftree adds.
+for wanted in ("/Document", "/H1", "/H2", "/H3", "/P", "/Span", "/Code", "/Link",
+               "/L", "/LI", "/Lbl", "/LBody", "/BlockQuote", "/Figure", "/Caption", "/Table", "/TR",
                "/TH", "/TD"):
     check("the tree holds %s" % wanted, wanted in kinds)
 texts = {kind: text for kind, text, _alt, _children in tree}
@@ -132,8 +139,8 @@ with pikepdf.open(out) as pdf:
                                               "dc:language", "xmp:CreatorTool", "pdf:Producer",
                                               "pdfuaid:part")}
 li_children = [c for k, _t, _a, c in tree if k == "/LI"]
-check("list items hold a label (LBody is the engine's known gap)",
-      li_children and all("/Lbl" in c for c in li_children))
+check("list items hold a label and a body",
+      li_children and all("/Lbl" in c and "/LBody" in c for c in li_children))
 th = [k for k, _t, _a, _c in tree if k == "/TH"]
 check("the table has two header cells", len(th) == 2)
 

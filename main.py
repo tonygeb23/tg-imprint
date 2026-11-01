@@ -1,6 +1,6 @@
 """TG Imprint: accessible documents and tagged PDFs. A TG Studios program.
 
-    python main.py                       open a blank document
+    python main.py                       the start screen
     python main.py <file>                open that file (epdf, html, txt, md, docx, pdf)
     python main.py --selftest --selftest-out report.txt
 """
@@ -307,6 +307,50 @@ def selftest():  # noqa: C901
     except Exception as exc:
         problems.append("pdf engine raised: %r" % exc)
 
+    # Text recognition is a library plus data files beside it, and a bundle
+    # missing either imports perfectly. Read a real picture of real words.
+    try:
+        import io
+        import fitz as _fitz
+        from PIL import Image as _Image, ImageDraw as _Draw, ImageFont as _Font
+        from tgimprint import pdfocr
+        if not pdfocr.available("eng") or not pdfocr.available("spa"):
+            problems.append("the text recognition data is missing from this build "
+                            "(looked in %s)" % pdfocr.data_folder())
+        else:
+            picture = _Image.new("L", (1200, 300), 255)
+            try:
+                font = _Font.truetype("arial.ttf", 60)
+            except OSError:
+                font = _Font.load_default(60)
+            _Draw.Draw(picture).text((60, 100), "Council notice", font=font, fill=0)
+            buffer = io.BytesIO()
+            picture.save(buffer, "PNG")
+            document = _fitz.open()
+            page = document.new_page(width=600, height=150)
+            page.insert_image(page.rect, stream=buffer.getvalue())
+            read = pdfocr.page_dict(page, "eng")
+            words = " ".join(s.get("text", "") for b in read.get("blocks", [])
+                             for l in b.get("lines", []) for s in l.get("spans", []))
+            document.close()
+            if "Council" not in words:
+                problems.append("text recognition ran and read %r" % words[:60])
+            else:
+                notes.append("text recognition: read a picture of words")
+    except Exception as exc:
+        problems.append("text recognition raised in this build: %r" % exc)
+
+    try:
+        from tgimprint import exporters
+        word = os.path.join(tempfile.mkdtemp(prefix="tgimprint-selftest-"), "selftest.docx")
+        exporters.export_docx("<h1>Selftest</h1><p>Words.</p>", word, {"title": "Selftest"})
+        if os.path.getsize(word) < 1000:
+            problems.append("the Word export wrote a file too small to be one")
+        else:
+            notes.append("Word export: a document written")
+    except Exception as exc:
+        problems.append("the Word export raised in this build: %r" % exc)
+
     if engine_ok:
         try:
             from tgimprint import pdfexport
@@ -596,7 +640,11 @@ def main():
             import traceback
             traceback.print_exc()
             code = 1
-        sys.stdout.flush()
+        # A windowed frozen build has no stdout at all. Without this guard it
+        # raised here, after the report, and sat behind PyInstaller's error
+        # dialog for good, stalling whatever was waiting on the selftest.
+        if sys.stdout:
+            sys.stdout.flush()
         # Hard exit, on purpose. The selftest builds real windows but never
         # finishes a MainLoop cleanly, so wx.App is still alive when the
         # interpreter starts unwinding, and that teardown can crash after

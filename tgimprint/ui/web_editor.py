@@ -67,7 +67,10 @@ class EditorView(wx.Panel):
 
     def __init__(self, parent, page=None, lang="en-US", textbox_role=True,
                  display=None):
-        super().__init__(parent)
+        # No name on this panel or the WebView: wx would answer "panel" and
+        # "wxWebView", and a screen reader would say them on the way in. The
+        # page's own label, Document text, is the name that matters.
+        super().__init__(parent, name="")
         self.ready = False
         self.loads = 0
         self._next_id = 1
@@ -80,7 +83,10 @@ class EditorView(wx.Panel):
         self.last_state = {}
         self.word_count = 0
 
-        self.web = webview.WebView.New(self, backend=webview.WebViewBackendEdge)
+        # BORDER_NONE: the default control border sat the page two pixels in
+        # from the panel, which on a dark theme read as a white line.
+        self.web = webview.WebView.New(self, backend=webview.WebViewBackendEdge,
+                                       style=wx.BORDER_NONE, name="")
         self.web.EnableContextMenu(False)
         self.web.EnableHistory(False)
         try:

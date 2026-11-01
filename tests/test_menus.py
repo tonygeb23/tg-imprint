@@ -169,7 +169,8 @@ check("every key of every entry is in the page map",
 digit_gates = [b for b in bindings if b["chord"].startswith("ctrl+alt+") and b["chord"][-1].isdigit()]
 check("Ctrl+Alt+digit is gated on the event's key (the AltGr rule)",
       digit_gates and all(b.get("gate") == "key" for b in digit_gates), digit_gates)
-code_gates = [b for b in bindings if b["chord"].startswith("ctrl+shift+") and b["chord"][-1].isdigit()]
+code_gates = [b for b in bindings if b["chord"].startswith("ctrl+shift+")
+              and b["chord"].rsplit("+", 1)[-1].isdigit()]
 check("Ctrl+Shift+digit aliases are gated on the physical key code",
       code_gates and all(b.get("code") == "Digit" + b["chord"][-1] for b in code_gates), code_gates)
 check("the deny list still blocks F5, Ctrl+Shift+R and F12",
@@ -185,14 +186,44 @@ check("Tab, Shift+Tab and Delete are the conditional keys",
       conditional == {"indent", "outdent", "delete_object"}, conditional)
 
 print("\nThe toolbar")
-tools = [a for a in ("new", "open", "save", "bold", "italic", "underline", "strike", "bullets",
-                     "numbers", "quote", "align_left", "align_center", "align_right",
-                     "align_justify", "insert_link", "insert_picture", "insert_table", "export_pdf")]
+tools = [a for a in ("new", "open", "save", "bold", "italic", "bullets", "numbers",
+                     "insert_link", "insert_picture", "insert_table", "check_document",
+                     "export_pdf")]
+gone = ("underline", "strike", "quote", "align_left", "align_center", "align_right",
+        "align_justify")
+check("alignment, underline, strike and quote have left the bar",
+      all(frame.toolbar.FindById(frame.id_of(a)) is None for a in gone))
+format_items = [item for _p, item in walk(bar.GetMenu(2))]
+check("and stayed in the Format menu with their keys",
+      all(frame.id_of(a) in [i.GetId() for i in format_items] and keymap.entry(a).keys for a in gone))
 check("every toolbar tool is a keymap entry with a handler",
       all(frame.toolbar.FindById(frame.id_of(a)) is not None and frame.handler_for(a) for a in tools))
 check("every tool's tooltip names its key",
       all(keymap.entry(a).primary in (frame.toolbar.FindById(frame.id_of(a)).GetShortHelp() or "")
           for a in tools if keymap.entry(a).primary))
+
+print("\nThe 0.3.0 commands")
+file_items = {frame._action_of.get(i.GetId()) for _p, i in walk(bar.GetMenu(0))}
+check("File has Analyse, Repair and Make a PDF accessible",
+      {"check_pdf", "repair_pdf", "make_accessible"} <= file_items, file_items)
+check("File, Export as has PDF, Word, Markdown and Plain text",
+      {"export_pdf", "export_word", "export_markdown", "export_text"} <= file_items)
+check("Ctrl+Shift+A, which was Check a PDF, is Analyse a PDF: a taught key stays",
+      "Ctrl+Shift+A" in keymap.entry("check_pdf").keys
+      and "Analyse" in keymap.entry("check_pdf").plain_label)
+check("the toggle is on the View menu and is a check item",
+      keymap.entry("toggle_panel").kind == "check"
+      and frame.id_of("toggle_panel") in [i.GetId() for _p, i in walk(bar.GetMenu(5))])
+check("Ctrl+Shift+K is still strikethrough, so the panel has its own key",
+      "Ctrl+Shift+K" in keymap.entry("strike").keys
+      and "Ctrl+Shift+L" in keymap.entry("toggle_panel").keys)
+check("F6 and Shift+F6 are still the headings, and Alt+F6 the structure",
+      "F6" in keymap.entry("next_heading").keys
+      and "Shift+F6" in keymap.entry("previous_heading").keys
+      and "Alt+F6" in keymap.entry("structure").keys)
+check("Ctrl+F6 and Ctrl+Shift+F6 move between panes, from inside the page too",
+      "ctrl+f6" in chords and "ctrl+shift+f6" in chords
+      and {b["scope"] for b in bindings if b["chord"] in ("ctrl+f6", "ctrl+shift+f6")} == {"app"})
 
 print("\ndocs/KEYBOARD.md is generated from the same list")
 doc = os.path.join(HERE, "docs", "KEYBOARD.md")

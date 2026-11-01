@@ -11,7 +11,7 @@ the first release.
 # decision 6 records that the name collides with an existing product and
 # is Tony's to settle before the first publish.
 APP_NAME = "TG Imprint"
-APP_VERSION = "0.2.1"
+APP_VERSION = "0.3.0"
 VENDOR = "TG Studios"
 #: docs/STRINGS.md: draft, needs approval.
 TAGLINE = "Write a document, get a PDF that screen readers can read."
@@ -92,6 +92,9 @@ OPEN_WILDCARD = (
     "All files (*.*)|*.*"
 )
 PDF_WILDCARD = "PDF files (*.pdf)|*.pdf"
+WORD_WILDCARD = "Word documents (*.docx)|*.docx"
+MARKDOWN_WILDCARD = "Markdown (*.md)|*.md"
+TEXT_WILDCARD = "Plain text (*.txt)|*.txt"
 #: How many recent documents the File menu remembers.
 RECENT_FILES = 8
 #: Seconds between autosave snapshots of an unsaved document.

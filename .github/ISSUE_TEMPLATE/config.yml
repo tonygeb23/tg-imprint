@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Email instead
+    url: mailto:info@tonygebhard.me
+    about: If a form is hard to use, or the document is private, write in.
+  - name: Ideas and questions
+    url: https://github.com/tonygeb23/tg-imprint/discussions
+    about: For anything that is not a fault.

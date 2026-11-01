@@ -1,11 +1,18 @@
 """The TG Imprint window.
 
 `create_frame(open_path=None)` is what main.py calls. The frame owns one
-document, one WebView2 editor (web_editor.EditorView), the menus and the
-toolbar generated from keymap.py, a status bar whose first field is wide
-enough for a sentence, and the three speech channels CONVENTIONS.md asks
-for. Everything slow (open, save, import, export, checking, the update
-check) runs on a thread and comes back through wx.CallAfter.
+document, one WebView2 editor (web_editor.EditorView) in a splitter beside
+the Accessibility panel, the start screen shown when nothing is open, the
+menus and the toolbar generated from keymap.py, a status bar whose first
+field is wide enough for a sentence, and the three speech channels
+CONVENTIONS.md asks for. Everything slow (open, save, import, export,
+checking, the update check) runs on a thread and comes back through
+wx.CallAfter.
+
+With nothing open the editor exists, hidden, and the start screen shows. It
+has to exist: recovery, a file on the command line and a second launch all
+load into it, and the WebView2 takes seconds to come up. Commands that need
+a document are greyed in the menus and refused in perform().
 
 The contract with main.py, from docs/briefs/worker-b.md:
 
@@ -49,13 +56,16 @@ from .. import settings as settings_mod
 from ..settings import Settings
 from . import dialogs
 from . import keymap
+from . import theme
 from . import toolbar as toolbar_mod
+from .access_panel import AccessPanel
+from .start_panel import StartPanel
+from .status_bar import ImprintStatusBar
 from .web_editor import EditorView, EVT_EDITOR_MESSAGE, sanitise
 
 #: docs/STRINGS.md, Worker B. Every sentence the window shows or speaks.
 S = {
-    "first_run": ("Welcome to TG Imprint. Start typing. F1 lists the keys and "
-                  "Ctrl+Shift+E makes the PDF."),
+    "first_run": "Welcome to TG Imprint. F1 lists the keys at any time.",
     "words": "%s words",
     "one_word": "1 word",
     "no_words": "No words yet",
@@ -87,6 +97,15 @@ S = {
     "zoom": "Text size %d percent",
     "display_applied": "Display settings applied.",
     "toolbar_labels_set": "Toolbar: %s.",
+    "nothing_open": "Nothing is open. Start a new document or open one first.",
+    "panel_on": "Accessibility panel shown.",
+    "panel_off": "Accessibility panel hidden.",
+    "panel_went": "%s %d.",
+    "panel_kinds": {"heading": "Heading", "picture": "Picture", "link": "Link",
+                    "table": "Table"},
+    "panel_gone": "That is no longer in the document.",
+    "panel_whole_document": "That one is about the whole document, so there is nowhere to go.",
+    "panel_checking": "Checking the document.",
     "title_set": "Title set to %s.",
     "title_cleared": "Title cleared.",
     "heading_at": "Heading %d: %s",
@@ -115,9 +134,11 @@ S = {
     "export_start": "Making %s.",
     "export_done": "PDF written: %s",
     "export_failed": "The PDF could not be made. %s",
-    "export_no_engine": ("No PDF engine was found. %s The document can still be saved "
-                         "as a web page from the File menu."),
-    "pdfua_claimed": "The PDF/UA identifier was written: every check passed.",
+    "export_no_engine": "%s The document can still be saved as a web page from the File menu.",
+    "export_nothing": "%s",
+    "pdfua_claimed": "The PDF/UA identifier was written: every check TG Imprint can make passed.",
+    "import_notes_head": ("The checks read structure, not truth. From when this document was "
+                          "opened, still to check by hand:"),
     "pdfua_not_claimed": ("The PDF was written without the PDF/UA claim. %s"),
     "export_module_missing": "The PDF export is not part of this build yet.",
     "check_module_missing": "The accessibility checker is not part of this build yet.",
@@ -132,6 +153,21 @@ S = {
     "checking": "Checking %s.",
     "check_done": "Checked %s.",
     "check_failed": "The PDF could not be checked. %s",
+    "analysing_title": "Analysing a PDF",
+    "repairing_title": "Repairing a PDF",
+    "repairing": "Repairing %s.",
+    "repair_done": "Repaired copy written: %s",
+    "repair_failed": "The PDF could not be repaired. %s",
+    "repair_same_file": ("A repair writes a new copy and leaves the original alone, so "
+                         "choose a different name."),
+    "repair_report": "%sWhat changed:\n%s\n\nThe repaired copy is at %s\n\n%s",
+    "repair_still_flat": ("The pages look the same, but a screen reader still has no "
+                          "structure to move through. To add it, open the PDF and export it.\n\n"),
+    "repair_name": "%s repaired.pdf",
+    "password_cancelled": "Nothing was opened.",
+    "exported_as": "Written: %s",
+    "export_as_failed": "That file could not be written. %s",
+    "exporter_missing": "That export is not part of this build yet.",
     "no_picture_here": "No picture at the caret. Ctrl+Shift+Alt+P lists every picture.",
     "no_object_here": "No picture or empty table at the caret.",
     "picture_updated": "Picture updated.",
@@ -175,7 +211,8 @@ S = {
     "engine_none": "none found. Install Microsoft Edge or Google Chrome to make PDFs.",
     "engine_unknown": "not checked (the engine module is not part of this build yet).",
     "context_menu_no_page": "",
-    "check_report_title": "Accessibility check",
+    "analysis_title": "Analysis of %s",
+    "repair_report_title": "Repaired copy",
     "forms_module_missing": "Filling in PDF forms is not part of this build yet.",
     "form_opening": "Opening %s.",
     "form_open_failed": "That PDF could not be opened as a form. %s",
@@ -190,7 +227,16 @@ TITLES = {
     "save_as": "Save as",
     "save_as_web": "Save as web page",
     "export": "Export PDF",
-    "check": "Check a PDF",
+    "export_word": "Export as Word",
+    "export_markdown": "Export as Markdown",
+    "export_text": "Export as plain text",
+    "could_not_write": "Could not write the file",
+    "check": "Analyse a PDF",
+    "repair_source": "Repair a PDF: choose the PDF",
+    "repair_target": "Save the repaired copy as",
+    "make_accessible": "Make a PDF accessible",
+    "could_not_repair": "Could not repair",
+    "could_not_analyse": "Could not analyse",
     "pictures_missing": "Pictures without descriptions",
     "remove_picture": "Remove picture",
     "remove_table": "Remove table",
@@ -208,15 +254,36 @@ PASTE_ON_THREAD_CHARS = 40000
 
 UPDATE_CHECK_DELAY_MS = 4000
 AUTOSAVE_MS = C.AUTOSAVE_SECONDS * 1000
+#: How long after typing stops the Accessibility panel looks again. Long
+#: enough that it never runs mid word, short enough to feel current.
+CHECK_DELAY_MS = 900
+#: The side panel. Below PANEL_NARROW_DIP of window width it would squeeze
+#: the page more than it helps, so it steps aside unless somebody asks for it.
+PANEL_WIDTH_DIP = 300
+PANEL_MIN_DIP = 220
+PANEL_NARROW_DIP = 860
+#: What still works with nothing open. Everything else needs a document.
+START_ACTIONS = frozenset((
+    "new", "open", "make_accessible", "check_pdf", "repair_pdf", "fill_form",
+    "preferences", "keyboard_help", "user_guide", "check_updates", "donate", "about",
+    "exit", "toolbar_icons", "toolbar_icons_labels", "toolbar_labels",
+    "display_options"))
 
 
 def create_frame(open_path=None):
     """What main.py calls. Builds the window, shows nothing itself."""
-    return MainFrame(open_path=open_path)
+    return MainFrame(open_path=open_path, start_screen=True)
+
+
+def is_password_error(exc):
+    """pdfrepair.PdfPasswordError, without importing the PDF stack to ask."""
+    return type(exc).__name__ == "PdfPasswordError"
 
 
 class MainFrame(wx.Frame):
-    def __init__(self, open_path=None, settings=None):
+    """`start_screen` is False for the tests that drive the editor directly."""
+
+    def __init__(self, open_path=None, settings=None, start_screen=False):
         super().__init__(None, title=C.APP_NAME)
         self.settings = settings if settings is not None else Settings()
         if settings is None:
@@ -231,6 +298,7 @@ class MainFrame(wx.Frame):
         self.path = None                 # the .imprint path once saved
         self.source_path = None          # what was opened, native or not
         self.imported_from = ""          # "Word", "Markdown"... else ""
+        self.import_notes = []           # kept for the export report
         self.meta = self._new_meta()
         self.modified = False
         self.snapshot_path = None
@@ -245,6 +313,16 @@ class MainFrame(wx.Frame):
         self._restart_body = None
         self._closing = False
         self._pumping = False
+        self._starting = bool(start_screen)
+        self.palette = theme.palette(self.settings.get("page_theme"))
+        saved_window = self.settings.get("window") or {}
+        self._panel_wanted = bool(saved_window.get("panel", True))
+        self._panel_forced = False
+        self._panel_width_dip = max(PANEL_MIN_DIP,
+                                    int(saved_window.get("panel_width", PANEL_WIDTH_DIP) or 0))
+        self._check_running = False
+        self._check_again = False
+        self._check_stale = True
 
         # Ids and menus from the one list.
         self._ids = {}
@@ -271,33 +349,52 @@ class MainFrame(wx.Frame):
         self.toolbar = None
         self._rebuild_toolbar(self.toolbar_mode(), 0)
         self._fit_timer = wx.Timer(self)
-        self.Bind(wx.EVT_TIMER, lambda _e: self._fit_toolbar(), self._fit_timer)
+        self.Bind(wx.EVT_TIMER, lambda _e: self._fit_window(), self._fit_timer)
         self.Bind(wx.EVT_SIZE, self._on_size)
 
-        self.editor = EditorView(self, page=self._document_page(), lang=self.meta["lang"],
-                                 display=self.settings.display())
+        self.top_rule = theme.Hairline(self)
+        self.splitter = wx.SplitterWindow(self, style=wx.SP_LIVE_UPDATE | wx.SP_NOBORDER, name="")
+        self.splitter.SetSashGravity(1.0)
+        self.splitter.SetMinimumPaneSize(self.FromDIP(PANEL_MIN_DIP))
+        self.splitter.Bind(wx.EVT_SPLITTER_SASH_POS_CHANGED, self._on_sash_moved)
+        self.splitter.Bind(wx.EVT_SPLITTER_DCLICK, lambda event: event.Veto())
+        self.splitter.Bind(wx.EVT_PAINT, self._paint_sash)
+        self.editor = EditorView(self.splitter, page=self._document_page(),
+                                 lang=self.meta["lang"], display=self.settings.display())
         self.editor.Bind(EVT_EDITOR_MESSAGE, self._on_editor_message)
+        self.panel = AccessPanel(self.splitter, self._go_to_issue, self._refocus,
+                                 self.on_toggle_panel,
+                                 ring=self.settings.get("focus_ring_width"))
+        self.panel.Hide()
+        self.splitter.Initialize(self.editor)
+        self.start = StartPanel(self, self)
         sizer = wx.BoxSizer(wx.VERTICAL)
-        sizer.Add(self.editor, 1, wx.EXPAND)
+        sizer.Add(self.top_rule, 0, wx.EXPAND)
+        sizer.Add(self.start, 1, wx.EXPAND)
+        sizer.Add(self.splitter, 1, wx.EXPAND)
         self.SetSizer(sizer)
 
-        self.status = self.CreateStatusBar(4)
-        self.status.SetStatusWidths([-6, -2, -1, -1])
+        self.status = ImprintStatusBar(self)
+        self.SetStatusBar(self.status)
         self._set_style_field({})
         self.status.SetStatusText(S["no_words"], 2)
         self.status.SetStatusText(self.meta["lang"], 3)
 
         self._restore_geometry()
         self.SetMinSize(self.FromDIP(wx.Size(640, 440)))
+        self._apply_palette(force=True)
         self._fit_toolbar()
         self._sync_view_menu()
-        self.toolbar.Bind(wx.EVT_CONTEXT_MENU, self.on_context_menu)
+        self._set_screen(self._starting)
         self._update_title()
         self.Bind(wx.EVT_CLOSE, self._on_close)
+        self.Bind(wx.EVT_SYS_COLOUR_CHANGED, self._on_system_colours)
 
         self._autosave = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self._on_autosave_tick, self._autosave)
         self._autosave.Start(AUTOSAVE_MS)
+        self._check_timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self._on_check_tick, self._check_timer)
 
         wx.CallLater(UPDATE_CHECK_DELAY_MS, self._check_updates_quietly)
         wx.CallAfter(self._after_show, open_path)
@@ -321,12 +418,18 @@ class MainFrame(wx.Frame):
 
     def _rebuild_toolbar(self, mode, squeeze):
         old = getattr(self, "toolbar", None)
-        self.toolbar = toolbar_mod.EditorToolBar(self, self.id_of, mode=mode, squeeze=squeeze)
+        self.toolbar = toolbar_mod.EditorToolBar(self, self.id_of, mode=mode, squeeze=squeeze,
+                                                 pal=self.palette)
         self.SetToolBar(self.toolbar)
         if old is not None:
             old.Destroy()
-        self._toolbar_widths[(mode, squeeze)] = self.toolbar.needed_width()
+        # A rebuilt bar is a new window. Without this the Applications key
+        # on the toolbar stopped working after the first rebuild.
+        self.toolbar.Bind(wx.EVT_CONTEXT_MENU, self.on_context_menu)
+        self._toolbar_widths[(mode, squeeze, self.palette.name)] = self.toolbar.needed_width()
         self.toolbar.sync(getattr(self, "state", None) or {})
+        if self._starting:
+            self.toolbar.Hide()
         self.Layout()
 
     def _fit_toolbar(self):
@@ -345,16 +448,24 @@ class MainFrame(wx.Frame):
         width = self.GetClientSize().width
         if width <= 0:
             return
-        squeeze = 0
-        if mode == "icons_labels":
-            full = self._toolbar_widths.get((mode, 0))
-            if full is not None and full > width:
-                squeeze = 1
-        if (mode, squeeze) == (self.toolbar.mode, self.toolbar.squeeze):
+        name = self.palette.name
+        levels = {"icons_labels": (0, 1, 2), "labels": (0, 1)}.get(mode, (0,))
+        squeeze = levels[0]
+        for squeeze in levels:
+            known = self._toolbar_widths.get((mode, squeeze, name))
+            if known is None or known <= width:
+                break
+        if (mode, squeeze, self.palette) == (self.toolbar.mode, self.toolbar.squeeze,
+                                             self.toolbar.pal):
             return
         self._rebuild_toolbar(mode, squeeze)
-        if squeeze == 0 and self._toolbar_widths.get((mode, 0), 0) > width:
+        if self._toolbar_widths.get((mode, squeeze, name), 0) > width and squeeze != levels[-1]:
             wx.CallAfter(self._fit_toolbar)          # now it has been measured
+
+    def _fit_window(self):
+        """A resize has settled: the toolbar's shape and the panel's place."""
+        self._fit_toolbar()
+        self._place_panel()
 
     # --------------------------------------------------------- display --
     def display_settings(self):
@@ -371,10 +482,44 @@ class MainFrame(wx.Frame):
         if not self:
             return
         self.editor.set_display(self.display_settings())
+        if self.panel.ring is not None:
+            self.panel.ring.set_width(self.settings.get("focus_ring_width"))
+        self._apply_palette()
         self._fit_toolbar()
         self._sync_view_menu()
         if speak:
             self.announce(speak)
+
+    def _apply_palette(self, force=False):
+        """The window round the page, in the page's theme.
+
+        The Windows high contrast colours win over all of it: theme.palette
+        hands back the system's own and every control here goes back to
+        what the person chose. The exported PDF is built from the body HTML
+        and never sees any of this.
+        """
+        pal = theme.palette(self.settings.get("page_theme"))
+        if pal == self.palette and not force:
+            return                       # the zoom or the caret changed, not the colours
+        self.palette = pal
+        theme.caption(self, pal)
+        theme.paint(self, pal)
+        theme.paint(self.top_rule, pal, background=pal.rule)
+        self.editor.SetBackgroundColour(wx.NullColour if pal.native else pal.canvas)
+        theme.paint(self.splitter, pal)
+        self.status.set_palette(pal)
+        self.panel.set_palette(pal)
+        self.start.set_palette(pal)
+        self.Refresh()
+
+    def _on_system_colours(self, event):
+        event.Skip()
+        wx.CallAfter(self._colours_changed)
+
+    def _colours_changed(self):
+        if self and not self._closing:
+            self._apply_palette(force=True)
+            self._fit_toolbar()
 
     def _set_toolbar_mode(self, mode):
         self.settings["toolbar_labels_mode"] = mode
@@ -400,7 +545,10 @@ class MainFrame(wx.Frame):
         self.on_preferences(page="Display")
 
     def _sync_view_menu(self):
-        """The toolbar radio items say which shape the bar is in."""
+        """The toolbar radio items say which shape the bar is in, and the
+        panel's tick says whether it is there."""
+        for item in self._menu_items.get("toggle_panel", []):
+            item.Check(self.panel_visible())
         mode = self.toolbar_mode()
         for action, name in (("toolbar_icons", "icons"),
                              ("toolbar_icons_labels", "icons_labels"),
@@ -453,6 +601,8 @@ class MainFrame(wx.Frame):
                 continue
             if action in ("bold", "italic", "underline", "strike", "code"):
                 item.Check(bool(state.get(action)))
+            elif action == "toggle_panel":
+                item.Check(self.panel_visible())
             elif action == style or action == align:
                 item.Check(True)
 
@@ -495,6 +645,9 @@ class MainFrame(wx.Frame):
         return None
 
     def perform(self, action, event=None):
+        if self._starting and action not in START_ACTIONS:
+            self.announce(S["nothing_open"])
+            return
         handler = self.handler_for(action)
         if handler is not None:
             handler(event)
@@ -533,6 +686,13 @@ class MainFrame(wx.Frame):
         self.speaker.say(text)
         self.note(text)
 
+    def announce_after(self, text):
+        """Said after whatever the focus move is saying, not over it, for
+        an answer that arrives with focus: the panel's count, on the row."""
+        if self.speech_level() != C.SPEECH_NONE:
+            self.speaker.say(text, interrupt=False)
+        self.note(text)
+
     def note(self, text):
         status = getattr(self, "status", None)
         if status is not None:
@@ -550,7 +710,8 @@ class MainFrame(wx.Frame):
     def _after_show(self, open_path):
         if not self:
             return
-        self.editor.focus()
+        if not open_path:
+            self._refocus()
         # Recovery first, so a double click on a document after a crash
         # still offers the snapshot; the document opens if nothing was
         # recovered.
@@ -562,6 +723,8 @@ class MainFrame(wx.Frame):
             self._offer_recovery()
         if open_path and not self.modified and not self.path:
             self._load_path(open_path)
+        if not self._starting:
+            self._panel_dirty()
         first_run = bool(appupdate_flag("FIRST_RUN")) or not self.settings.get("first_run_done")
         if first_run:
             self.settings["first_run_done"] = True
@@ -600,7 +763,7 @@ class MainFrame(wx.Frame):
             area = wx.Display(0).GetClientArea()
         except Exception:
             area = wx.Rect(0, 0, 1920, 1080)
-        wanted = self.FromDIP(wx.Size(1100, 780))
+        wanted = self.FromDIP(wx.Size(1200, 780))
         default = wx.Size(min(wanted.width, int(area.width * 0.92)),
                           min(wanted.height, int(area.height * 0.90)))
         try:
@@ -626,7 +789,9 @@ class MainFrame(wx.Frame):
         try:
             rect = self.GetRect()
             self.settings["window"] = {"x": rect.x, "y": rect.y, "width": rect.width,
-                                       "height": rect.height, "maximised": self.IsMaximized()}
+                                       "height": rect.height, "maximised": self.IsMaximized(),
+                                       "panel": self._panel_wanted,
+                                       "panel_width": self._panel_width_dip}
         except Exception:
             pass
 
@@ -653,11 +818,269 @@ class MainFrame(wx.Frame):
         return self.meta.get("title") or S["untitled"]
 
     def _update_title(self):
-        self.SetTitle("%s - %s" % (self.document_name(), C.APP_NAME))
+        if self._starting:
+            self.SetTitle(C.APP_NAME)
+        else:
+            self.SetTitle("%s - %s" % (self.document_name(), C.APP_NAME))
 
     def mark_modified(self):
         if not self.modified:
             self.modified = True
+        self._panel_dirty()
+
+    # ---------------------------------------------- the two screens --
+    def start_showing(self):
+        return self._starting
+
+    def _set_screen(self, starting):
+        """The start screen, or the editor with its toolbar and panel."""
+        self._starting = bool(starting)
+        self.Freeze()
+        try:
+            self.GetSizer().Show(self.start, self._starting)
+            self.GetSizer().Show(self.splitter, not self._starting)
+            self.toolbar.Show(not self._starting)
+            self.start.refresh_recent()
+            if self._starting:
+                # Nothing is open, so nothing has a style, a word count or a
+                # language to report.
+                for field in (0, 1, 2, 3):
+                    self.status.SetStatusText("", field)
+            else:
+                self._set_style_field(self.state or {})
+                self._set_words_field(self.editor.word_count)
+                self.status.SetStatusText(self.meta.get("lang", ""), 3)
+            self.SendSizeEvent()
+            self.Layout()
+        finally:
+            self.Thaw()
+        self._sync_commands()
+        self._place_panel()
+        self._update_title()
+
+    def show_editor(self):
+        """Something is open, or about to be."""
+        if self._starting:
+            self._set_screen(False)
+
+    def show_start(self):
+        self._set_screen(True)
+
+    def _sync_commands(self):
+        """With nothing open, grey what needs a document."""
+        for action, items in self._menu_items.items():
+            if action == "user_guide":
+                continue
+            for item in items:
+                item.Enable(not self._starting or action in START_ACTIONS)
+
+    def _refocus(self):
+        """Back to wherever the person works: the first thing on the start
+        screen, or the document."""
+        if not self:
+            return
+        if self._starting:
+            self.start.focus_first()
+        else:
+            self.editor.focus()
+
+    # -------------------------------------------- the Accessibility panel --
+    def panel_visible(self):
+        return self.splitter.IsSplit()
+
+    def _is_narrow(self):
+        return self.ToDIP(self.GetClientSize().width) < PANEL_NARROW_DIP
+
+    def _panel_pixels(self):
+        return self.FromDIP(self._panel_width_dip)
+
+    def _place_panel(self):
+        """Beside the editor, unless it is off or the window is narrow."""
+        if not self or self._starting:
+            return
+        wanted = self._panel_wanted and (self._panel_forced or not self._is_narrow())
+        if wanted and not self.splitter.IsSplit():
+            self.splitter.SplitVertically(self.editor, self.panel, -self._panel_pixels())
+            self.splitter.SetSashPosition(max(self.FromDIP(PANEL_MIN_DIP),
+                                              self.splitter.GetClientSize().width
+                                              - self._panel_pixels()))
+            if self._check_stale:
+                self._panel_dirty(0)
+        elif not wanted and self.splitter.IsSplit():
+            inside = self._focus_is_in(self.panel)
+            self.splitter.Unsplit(self.panel)
+            if inside:
+                self._refocus()
+        self._sync_view_menu()
+
+    def _focus_is_in(self, window):
+        here = wx.Window.FindFocus()
+        while here is not None:
+            if here is window:
+                return True
+            here = here.GetParent()
+        return False
+
+    def _on_sash_moved(self, event):
+        event.Skip()
+        width = self.splitter.GetClientSize().width - event.GetSashPosition()
+        self._panel_width_dip = max(PANEL_MIN_DIP, self.ToDIP(width))
+
+    def _paint_sash(self, event):
+        """The sash as a hairline with room to grab it. The system draws a
+        wide grey bar, which on a dark theme is the brightest thing in the
+        window."""
+        dc = wx.PaintDC(self.splitter)
+        if not self.splitter.IsSplit():
+            return
+        pal = self.palette
+        x = self.splitter.GetSashPosition()
+        width = self.splitter.GetSashSize()
+        height = self.splitter.GetClientSize().height
+        dc.SetPen(wx.TRANSPARENT_PEN)
+        dc.SetBrush(wx.Brush(pal.chrome))
+        dc.DrawRectangle(x, 0, width, height)
+        dc.SetBrush(wx.Brush(pal.rule))
+        dc.DrawRectangle(x, 0, self.FromDIP(1), height)
+
+    def on_toggle_panel(self, _event=None):
+        show = not self.panel_visible()
+        self._panel_wanted = show
+        self._panel_forced = show and self._is_narrow()
+        self._place_panel()
+        self._save_geometry()
+        self.settings.save()
+        self.announce_help(S["panel_on" if show else "panel_off"])
+
+    def on_check_document(self, _event=None):
+        """The toolbar's Check: show the panel, look now, go to the list."""
+        if not self.panel_visible():
+            self._panel_wanted = True
+            self._panel_forced = self._is_narrow()
+            self._place_panel()
+            self._save_geometry()
+            self.settings.save()
+        self._panel_dirty(0)
+        self.panel.focus_list()
+        self.announce_after(self.panel.summary_text())
+
+    def _panes(self):
+        panes = [self.editor]
+        if self.panel_visible():
+            panes.append(self.panel)
+        panes.append(self.toolbar)
+        return panes
+
+    def _current_pane(self):
+        for pane in (self.panel, self.toolbar):
+            if self._focus_is_in(pane):
+                return pane
+        return self.editor
+
+    def _go_to_pane(self, pane):
+        if pane is self.panel:
+            self.panel.focus_list()
+            self.announce_after(self.panel.summary_text())
+        elif pane is self.toolbar:
+            self.toolbar.style.SetFocus()
+        else:
+            self.editor.focus()
+
+    def _cycle_pane(self, step):
+        panes = self._panes()
+        here = self._current_pane()
+        index = panes.index(here) if here in panes else 0
+        self._go_to_pane(panes[(index + step) % len(panes)])
+
+    def on_next_pane(self, _event=None):
+        self._cycle_pane(1)
+
+    def on_previous_pane(self, _event=None):
+        self._cycle_pane(-1)
+
+    def _heading_key(self, action):
+        """F6 and Shift+F6 keep the job they were taught for in the document.
+        Elsewhere there is no heading to hear about, so they go back to it."""
+        if self._current_pane() is self.editor:
+            self.editor.call("apply", action)
+        else:
+            self._refocus()
+
+    def on_next_heading(self, _event=None):
+        self._heading_key("next_heading")
+
+    def on_previous_heading(self, _event=None):
+        self._heading_key("previous_heading")
+
+    def _panel_dirty(self, delay=CHECK_DELAY_MS):
+        """Look again once things have been quiet for a moment."""
+        self._check_stale = True
+        timer = getattr(self, "_check_timer", None)
+        if timer is not None:
+            timer.StartOnce(max(1, delay))
+
+    def _on_check_tick(self, _event):
+        if self._closing or self._starting:
+            return
+        if self._pumping or not self.editor.ready:
+            self._panel_dirty()
+            return
+        if not self.panel_visible():
+            return                       # looked at when it next appears
+        if self._check_running:
+            self._check_again = True
+            return
+        self._check_running = True
+        self._check_stale = False
+        self.editor.call("checkBody", callback=self._check_body)
+
+    def _check_body(self, body, error):
+        if self._closing or error or body is None:
+            self._check_running = False
+            return
+        meta = dict(self.meta)
+
+        def work():
+            try:
+                from .. import doccheck
+                issues = doccheck.check(body, meta)
+            except Exception:
+                issues = None
+            wx.CallAfter(self._document_checked, issues)
+
+        threading.Thread(target=work, daemon=True, name="tgimprint-doccheck").start()
+
+    def _document_checked(self, issues):
+        if not self:
+            return
+        self._check_running = False
+        if self._closing:
+            return
+        if issues is not None:
+            self.panel.set_issues(issues)
+        if self._check_again:
+            self._check_again = False
+            self._panel_dirty()
+
+    def _go_to_issue(self, issue):
+        """Enter on an issue: go to it, or open what fixes it."""
+        if issue.key in ("title", "lang"):
+            self._edit_properties(focus=issue.key)
+            return
+        if not issue.kind:
+            self.announce(S["panel_whole_document"])
+            return
+
+        def went(value, _error):
+            if value and value.get("ok"):
+                self.announce_help(S["panel_went"] % (S["panel_kinds"].get(issue.kind, ""),
+                                                      issue.ordinal))
+            else:
+                self.announce(S["panel_gone"])
+                self._panel_dirty(0)
+
+        self._refocus()
+        self.editor.call("goToIssue", issue.kind, issue.ordinal, callback=went)
 
     def _apply_meta_to_page(self):
         self.editor.set_lang(self.meta.get("lang", "en-US"))
@@ -712,14 +1135,13 @@ class MainFrame(wx.Frame):
             self.state = data
             self.toolbar.sync(data)
             self._sync_menus(data)
-            self._set_style_field(data)
+            if not self._starting:
+                self._set_style_field(data)
         elif kind == "modified":
             self.mark_modified()
         elif kind == "words":
-            count = int(data.get("count") or 0)
-            self.status.SetStatusText(
-                S["no_words"] if count == 0 else S["one_word"] if count == 1
-                else S["words"] % "{:,}".format(count), 2)
+            if not self._starting:
+                self._set_words_field(int(data.get("count") or 0))
         elif kind == "did":
             self._on_did(data.get("action"), data.get("result") or {})
         elif kind == "key":
@@ -754,6 +1176,11 @@ class MainFrame(wx.Frame):
                             "justify": "justify"}.get(state.get("align") or "left", "left")
         for item in self._menu_items.get(align, []):
             item.Check(True)
+
+    def _set_words_field(self, count):
+        self.status.SetStatusText(
+            S["no_words"] if count == 0 else S["one_word"] if count == 1
+            else S["words"] % "{:,}".format(count), 2)
 
     def _set_style_field(self, state):
         block = state.get("block") or "p"
@@ -854,7 +1281,7 @@ class MainFrame(wx.Frame):
         point = self.editor.web.ClientToScreen(wx.Point(int(x * scale), int(y * scale)))
         self.PopupMenu(menu, self.ScreenToClient(point))
         menu.Destroy()
-        self.editor.focus()
+        self._refocus()
 
     def on_context_menu(self, event=None):
         """The wx side of the Applications key and Shift+F10.
@@ -870,6 +1297,8 @@ class MainFrame(wx.Frame):
                 point = event.GetPosition()
         except Exception:
             point = None
+        if self._starting:
+            return
         menu, made = self._make_menu(keymap.CONTEXT_MENU, remember=False, collect=True)
         self._check_items(made, self.state or {})
         where = self.ScreenToClient(point) if point and point != wx.DefaultPosition \
@@ -1007,25 +1436,59 @@ class MainFrame(wx.Frame):
     def on_new(self, _event=None):
         if not self._confirm_discard():
             return
+        self._clear_document()
+        self.show_editor()
+        self.announce_help(S["new_document"])
+        self._refocus()
+
+    def _clear_document(self):
         self._discard_snapshot()
         self.path = None
         self.source_path = None
         self.imported_from = ""
+        self.import_notes = []
         self.meta = self._new_meta()
         self.modified = False
         self._apply_meta_to_page()
         self.editor.load_clean_body("<p><br></p>")
         self._update_title()
-        self.announce_help(S["new_document"])
-        self.editor.focus()
+        self._panel_dirty()
 
     def on_close_document(self, _event=None):
         if not self._confirm_discard():
             return
-        # Answered once. on_new would ask again while modified is still set.
         self.modified = False
-        self.on_new()
+        self._clear_document()
+        self.show_start()
         self.announce_help(S["closed"])
+        self._refocus()
+
+    def on_make_accessible(self, _event=None):
+        """A PDF brought in as a document. The notes dialog says what the
+        import found, and the panel is what shows what is left to do."""
+        if not self._confirm_discard():
+            return
+        path = self._ask_pdf(TITLES["make_accessible"])
+        if path:
+            self._load_path(path)
+
+    def _ask_pdf(self, title):
+        with wx.FileDialog(self, title, defaultDir=self.last_folder or paths.documents_dir(),
+                           wildcard=C.PDF_WILDCARD,
+                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as dialog:
+            if dialog.ShowModal() != wx.ID_OK:
+                return None
+            return dialog.GetPath()
+
+    def _ask_for_password(self, path, exc, retry):
+        """The file needs a password, or that one was wrong. Ask, and go
+        again; Cancel leaves everything as it was."""
+        password = dialogs.ask_password(self, os.path.basename(path), str(exc))
+        if password is None:
+            self.announce_help(S["password_cancelled"])
+            self._refocus()
+            return
+        retry(password)
 
     def on_open(self, _event=None):
         if not self._confirm_discard():
@@ -1053,7 +1516,7 @@ class MainFrame(wx.Frame):
             return
         self._load_path(path)
 
-    def _load_path(self, path):
+    def _load_path(self, path, password=""):
         path = os.path.abspath(path)
         name = os.path.basename(path)
         kind = kind_of(path)
@@ -1067,7 +1530,8 @@ class MainFrame(wx.Frame):
         def work():
             try:
                 body, meta, warnings = read_document(path, kind,
-                                                     progress=(busy.step if busy else None))
+                                                     progress=(busy.step if busy else None),
+                                                     password=password)
                 clean, more = sanitise(body)
                 warnings = list(warnings) + list(more)
                 wx.CallAfter(self._loaded, path, kind, clean, meta, warnings, busy)
@@ -1079,10 +1543,13 @@ class MainFrame(wx.Frame):
     def _load_failed(self, path, exc, busy):
         if busy:
             busy.finish()
+        if is_password_error(exc):
+            self._ask_for_password(path, exc, lambda word: self._load_path(path, word))
+            return
         message = S["open_failed"] % (os.path.basename(path), exc)
         self.announce(message)
         dialogs.show_text(self, TITLES["could_not_open"], message)
-        self.editor.focus()
+        self._refocus()
 
     def _loaded(self, path, kind, clean, meta, warnings, busy):
         if busy:
@@ -1098,18 +1565,22 @@ class MainFrame(wx.Frame):
             self.path = path
             self.source_path = path
             self.imported_from = ""
+            self.import_notes = []
             self.modified = False
         else:
             self.path = None
             self.source_path = path
             self.imported_from = source_name(source_kind or kind)
+            self.import_notes = list(warnings)
             self.modified = True
         self.settings.remember(path)
         self.settings["last_folder"] = self.last_folder
         self.settings.save()
+        self.show_editor()
         self._apply_meta_to_page()
         self._update_title()
-        self.editor.load_clean_body(clean, callback=lambda _v, _e: self.editor.focus())
+        self.editor.load_clean_body(clean, callback=lambda _v, _e: self._refocus())
+        self._panel_dirty()
         if self.imported_from:
             self.announce(S["opened_from"] % self.imported_from)
         else:
@@ -1120,11 +1591,13 @@ class MainFrame(wx.Frame):
         if needing:
             plural = "" if needing == 1 else "s"
             self.announce(S["pictures_need_alt"] % (needing, plural, "s" if needing == 1 else ""))
-            if dialogs.ask(self, TITLES["pictures_missing"],
+            # After a PDF the panel is what shows what is left to do, so the
+            # offer is only made where the panel is not on screen to say it.
+            if (kind != "pdf" or not self.panel_visible()) and dialogs.ask(self, TITLES["pictures_missing"],
                            S["pictures_offer"] % (needing, plural, "s" if needing == 1 else "ve"),
                            yes="&Open the Pictures list", no="&Not now"):
                 self.on_pictures()
-        self.editor.focus()
+        self._refocus()
 
     # ------------------------------------------------------------ save --
     def _ask_save_path(self, web=False):
@@ -1193,6 +1666,7 @@ class MainFrame(wx.Frame):
             self.path = path
             self.source_path = path
             self.imported_from = ""
+            self.import_notes = []
             self.modified = False
             self._discard_snapshot()
             self._update_title()
@@ -1284,12 +1758,13 @@ class MainFrame(wx.Frame):
         if error is not None:
             name = type(error).__name__
             if name == "EngineError":
-                message = S["export_no_engine"] % error
+                empty = str(error).startswith("There is nothing in this document")
+                message = S["export_nothing" if empty else "export_no_engine"] % error
             else:
                 message = S["export_failed"] % error
             self.announce(message)
             dialogs.show_text(self, TITLES["could_not_export"], message)
-            self.editor.focus()
+            self._refocus()
             return
         lines = []
         claimed = bool(getattr(result, "pdfua_claimed", False))
@@ -1318,6 +1793,10 @@ class MainFrame(wx.Frame):
         if warnings:
             lines.append("")
             lines.extend(warnings)
+        if self.import_notes:
+            lines.append("")
+            lines.append(S["import_notes_head"])
+            lines.extend(self.import_notes)
         lines.append("")
         try:
             lines.append(report.format_report())
@@ -1338,7 +1817,7 @@ class MainFrame(wx.Frame):
             open_file(out)
         elif choice == "folder":
             open_folder(out)
-        self.editor.focus()
+        self._refocus()
 
     def on_print(self, _event=None):
         self._ensure_title(self._print_after_title)
@@ -1363,38 +1842,199 @@ class MainFrame(wx.Frame):
             open_file(out)
             self.announce(S["print_fallback"])
 
-    def on_check_pdf(self, _event=None):
-        try:
-            from .. import pdfcheck
-        except ImportError:
-            self.announce(S["check_module_missing"])
-            return
-        with wx.FileDialog(self, TITLES["check"], defaultDir=self.last_folder or paths.documents_dir(),
-                           wildcard=C.PDF_WILDCARD, style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as dialog:
+    # ------------------------------------------------ export as, other --
+    def _export_as(self, title, extension, wildcard, writer):
+        """Word, Markdown and plain text: the file dialog, then a thread."""
+        default = self.meta.get("title") or os.path.splitext(self.document_name())[0]
+        with wx.FileDialog(self, title, defaultDir=self.last_folder or paths.documents_dir(),
+                           defaultFile=safe_filename(default) + extension, wildcard=wildcard,
+                           style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as dialog:
             if dialog.ShowModal() != wx.ID_OK:
                 return
-            path = dialog.GetPath()
+            out = dialog.GetPath()
+        if not out.lower().endswith(extension):
+            out += extension
+        self.last_folder = os.path.dirname(out)
+        self.export_body_to(out, writer)
+
+    def export_body_to(self, out, writer):
+        """`writer` names the function in exporters.py."""
+        meta = dict(self.meta)
+
+        def got(body, error):
+            if error or body is None:
+                self._exported(out, error or "The document could not be read back.")
+                return
+
+            def work():
+                try:
+                    from .. import exporters
+                    getattr(exporters, writer)(body, out, meta)
+                    wx.CallAfter(self._exported, out, None)
+                except Exception as exc:
+                    wx.CallAfter(self._exported, out, exc)
+
+            threading.Thread(target=work, daemon=True, name="tgimprint-exportas").start()
+
+        self.editor.get_body(got)
+
+    def _exported(self, out, error):
+        if not self:
+            return
+        if error is None:
+            self.announce(S["exported_as"] % os.path.basename(out))
+            return
+        message = S["export_as_failed"] % error
+        self.announce(message)
+        dialogs.show_text(self, TITLES["could_not_write"], message)
+        self._refocus()
+
+    def on_export_word(self, _event=None):
+        self._export_as(TITLES["export_word"], ".docx", C.WORD_WILDCARD, "export_docx")
+
+    def on_export_markdown(self, _event=None):
+        self._export_as(TITLES["export_markdown"], ".md", C.MARKDOWN_WILDCARD, "export_markdown")
+
+    def on_export_text(self, _event=None):
+        self._export_as(TITLES["export_text"], ".txt", C.TEXT_WILDCARD, "export_text")
+
+    # ----------------------------------------------------- analyse a PDF --
+    def on_check_pdf(self, _event=None):
+        """File, Analyse a PDF. Ctrl+Shift+A was Check a PDF and stays."""
+        path = self._ask_pdf(TITLES["check"])
+        if path:
+            self.analyse_path(path)
+
+    def analyse_path(self, path, password=""):
         name = os.path.basename(path)
+        self.last_folder = os.path.dirname(path)
         self.announce_help(S["checking"] % name)
+        busy = dialogs.BusyDialog(self, self, S["analysing_title"], S["checking"] % name)
+        busy.Show()
 
         def work():
             try:
-                text = pdfcheck.check(path).format_report()
-                wx.CallAfter(self._checked, name, text, None)
+                from .. import pdfanalysis
+                wx.CallAfter(self._analysed, path, password, pdfanalysis.analyse(path, password),
+                             None, busy)
             except Exception as exc:
-                wx.CallAfter(self._checked, name, "", exc)
+                wx.CallAfter(self._analysed, path, password, None, exc, busy)
 
-        threading.Thread(target=work, daemon=True, name="tgimprint-check").start()
+        threading.Thread(target=work, daemon=True, name="tgimprint-analyse").start()
 
-    def _checked(self, name, text, error):
+    def _analysed(self, path, password, analysis, error, busy):
+        if not self:
+            return
+        busy.finish()
+        name = os.path.basename(path)
         if error is not None:
             message = S["check_failed"] % error
             self.announce(message)
-            dialogs.show_text(self, S["check_report_title"], message)
+            dialogs.show_text(self, TITLES["could_not_analyse"], message)
+            self._refocus()
+            return
+        if analysis.needs_password:
+            self._ask_for_password(path, analysis.verdict,
+                                   lambda word: self.analyse_path(path, word))
             return
         self.announce(S["check_done"] % name)
-        dialogs.show_text(self, "%s: %s" % (S["check_report_title"], name), text, field_label="&Report")
-        self.editor.focus()
+        buttons = [("&Close", "close")]
+        if analysis.level != "unreadable":
+            buttons = [("&Open it here", "open"), ("Re&pair it", "repair"), ("&Close", "close")]
+        dialog = dialogs.TextDialog(self, S["analysis_title"] % name, analysis.format_report(),
+                                    buttons=buttons, field_label="&Report", size=(640, 380),
+                                    escape_result="close", default=len(buttons) - 1)
+        try:
+            dialog.ShowModal()
+            choice = dialog.result
+        finally:
+            dialog.Destroy()
+        if choice == "open":
+            if self._confirm_discard():
+                self._load_path(path, password)
+                return
+        elif choice == "repair":
+            self.repair_path(path, password)
+            return
+        self._refocus()
+
+    # ------------------------------------------------------ repair a PDF --
+    def on_repair_pdf(self, _event=None):
+        path = self._ask_pdf(TITLES["repair_source"])
+        if path:
+            self.repair_path(path)
+
+    def _ask_repair_target(self, source):
+        name = os.path.splitext(os.path.basename(source))[0]
+        while True:
+            with wx.FileDialog(self, TITLES["repair_target"],
+                               defaultDir=os.path.dirname(source),
+                               defaultFile=S["repair_name"] % name, wildcard=C.PDF_WILDCARD,
+                               style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as dialog:
+                if dialog.ShowModal() != wx.ID_OK:
+                    return None
+                target = dialog.GetPath()
+            if not target.lower().endswith(".pdf"):
+                target += ".pdf"
+            if os.path.normcase(os.path.abspath(target)) != os.path.normcase(os.path.abspath(source)):
+                return target
+            self.announce(S["repair_same_file"])
+
+    def repair_path(self, source, password="", target=None):
+        target = target or self._ask_repair_target(source)
+        if not target:
+            self._refocus()
+            return
+        self.last_folder = os.path.dirname(target)
+        name = os.path.basename(source)
+        self.announce_help(S["repairing"] % name)
+        busy = dialogs.BusyDialog(self, self, S["repairing_title"], S["repairing"] % name)
+        busy.Show()
+
+        def work():
+            try:
+                from .. import pdfrepair
+                result = pdfrepair.repair_copy(source, target, password=password)
+                wx.CallAfter(self._repaired, source, target, result, None, busy)
+            except Exception as exc:
+                wx.CallAfter(self._repaired, source, target, None, exc, busy)
+
+        threading.Thread(target=work, daemon=True, name="tgimprint-repair").start()
+
+    def _repaired(self, source, target, result, error, busy):
+        if not self:
+            return
+        busy.finish()
+        if is_password_error(error):
+            self._ask_for_password(source, error,
+                                   lambda word: self.repair_path(source, word, target))
+            return
+        if error is not None:
+            message = S["repair_failed"] % error
+            self.announce(message)
+            dialogs.show_text(self, TITLES["could_not_repair"], message)
+            self._refocus()
+            return
+        self.announce(S["repair_done"] % os.path.basename(target))
+        flat = any(r.key == "tagged" and not r.passed for r in result.report.results)
+        text = S["repair_report"] % (S["repair_still_flat"] if flat else "",
+                                     "\n".join(result.changes), target,
+                                     result.report.format_report())
+        dialog = dialogs.TextDialog(self, S["repair_report_title"], text,
+                                    buttons=(("Open &PDF", "open"), ("Open &folder", "folder"),
+                                             ("&Close", "close")),
+                                    field_label="&Report", size=(640, 380),
+                                    escape_result="close", default=2)
+        try:
+            dialog.ShowModal()
+            choice = dialog.result
+        finally:
+            dialog.Destroy()
+        if choice == "open":
+            open_file(target)
+        elif choice == "folder":
+            open_folder(target)
+        self._refocus()
 
     # ------------------------------------------------------ properties --
     def on_properties(self, _event=None):
@@ -1416,7 +2056,7 @@ class MainFrame(wx.Frame):
                 self.announce_help(S["properties_applied"])
         finally:
             dialog.Destroy()
-        self.editor.focus()
+        self._refocus()
         return accepted
 
     def on_rename(self, _event=None):
@@ -1426,14 +2066,14 @@ class MainFrame(wx.Frame):
         with wx.TextEntryDialog(self, S["title_prompt"], "Document title",
                                 self.meta.get("title") or "") as dialog:
             if dialog.ShowModal() != wx.ID_OK:
-                self.editor.focus()
+                self._refocus()
                 return
             title = dialog.GetValue().strip()
         self.meta["title"] = title
         self.mark_modified()
         self._update_title()
         self.announce_help(S["title_set"] % title if title else S["title_cleared"])
-        self.editor.focus()
+        self._refocus()
 
     def on_preferences(self, _event=None, page=None):
         """Preferences. `page` names the tab to open on, "Display" from View.
@@ -1457,14 +2097,14 @@ class MainFrame(wx.Frame):
                 self.apply_display()
         finally:
             dialog.Destroy()
-        self.editor.focus()
+        self._refocus()
 
     def on_fill_form(self, _event=None):
         """Tools, Fill in a PDF form (Ctrl+Shift+F). The whole flow is in
         forms_dialog, which imports Worker A's pdfforms lazily."""
         from . import forms_dialog
         forms_dialog.fill_in_a_pdf_form(self)
-        self.editor.focus()
+        self._refocus()
 
     # ---------------------------------------------------------- insert --
     def on_insert_link(self, _event=None):
@@ -1482,7 +2122,7 @@ class MainFrame(wx.Frame):
                     self.announce_help(S["link_updated" if link else "link_inserted"])
             finally:
                 dialog.Destroy()
-            self.editor.focus()
+            self._refocus()
 
         self.editor.call("linkAtCaret", callback=got)
 
@@ -1497,7 +2137,7 @@ class MainFrame(wx.Frame):
                 self.announce_help(S["picture_inserted"])
         finally:
             dialog.Destroy()
-        self.editor.focus()
+        self._refocus()
 
     def on_insert_table(self, _event=None):
         from .table_dialog import TableDialog
@@ -1510,7 +2150,7 @@ class MainFrame(wx.Frame):
                 self.announce_help(S["table_inserted"] % (rows, cols))
         finally:
             dialog.Destroy()
-        self.editor.focus()
+        self._refocus()
 
     def on_picture_properties(self, _event=None):
         def got(value, _error):
@@ -1532,7 +2172,7 @@ class MainFrame(wx.Frame):
                 self.announce_help(S["picture_updated"])
         finally:
             dialog.Destroy()
-        self.editor.focus()
+        self._refocus()
 
     def _context_for(self, index, spec=None):
         """What the describer is told about where the picture sits.
@@ -1573,7 +2213,7 @@ class MainFrame(wx.Frame):
             self.editor.call("removeObject", kind, int(index))
             self.mark_modified()
             self.announce_help(S["picture_removed" if kind == "figure" else "table_removed"])
-        self.editor.focus()
+        self._refocus()
 
     def on_delete_object(self, _event=None):
         """The menu item: the page decides what is at the caret."""
@@ -1631,7 +2271,7 @@ class MainFrame(wx.Frame):
         if after:
             after()
         else:
-            self.editor.focus()
+            self._refocus()
 
     def on_describe_document(self, _event=None):
         try:
@@ -1657,7 +2297,7 @@ class MainFrame(wx.Frame):
                     dialog.ShowModal()
                 finally:
                     dialog.Destroy()
-                self.editor.focus()
+                self._refocus()
 
             self.editor.call("pictures", callback=got_pictures)
 
@@ -1679,7 +2319,7 @@ class MainFrame(wx.Frame):
                         if v and v.get("ok") else None))
             finally:
                 dialog.Destroy()
-            self.editor.focus()
+            self._refocus()
 
         self.editor.call("headings", callback=got)
 
@@ -1692,7 +2332,7 @@ class MainFrame(wx.Frame):
             dialog = PicturesDialog(self, self, pictures)
             try:
                 if dialog.ShowModal() != wx.ID_OK or not dialog.result:
-                    self.editor.focus()
+                    self._refocus()
                     return
                 what, index = dialog.result
             finally:
@@ -1700,7 +2340,7 @@ class MainFrame(wx.Frame):
             spec = pictures[index]
             if what == "go":
                 self.editor.call("goToPicture", index)
-                self.editor.focus()
+                self._refocus()
             elif what == "edit":
                 self._edit_figure(index, spec)
                 wx.CallAfter(self.on_pictures)
@@ -1754,7 +2394,7 @@ class MainFrame(wx.Frame):
             dialog.ShowModal()
         finally:
             dialog.Destroy()
-        self.editor.focus()
+        self._refocus()
 
     def on_user_guide(self, _event=None):
         if self._guide_available:
@@ -1786,7 +2426,7 @@ class MainFrame(wx.Frame):
         text = S["about"] % (C.APP_NAME, C.APP_VERSION, C.TAGLINE, C.VENDOR, engine, channel,
                              C.FEEDBACK_EMAIL, C.HOME_URL)
         dialogs.show_text(self, "About %s" % C.APP_NAME, text, field_label="&About")
-        self.editor.focus()
+        self._refocus()
 
     def on_exit(self, _event=None):
         self.Close()
@@ -1836,7 +2476,7 @@ class MainFrame(wx.Frame):
             problem = message
         self.announce_help(message or S["newest_version"])
         updatedialog.ask_about_update(self, C.APP_NAME, C.APP_VERSION, problem=problem)
-        self.editor.focus()
+        self._refocus()
 
     def _offer_update(self, info):
         from .. import appupdate
@@ -1846,7 +2486,7 @@ class MainFrame(wx.Frame):
                                                new_version=version, notes=notes)
         if choice != updatedialog.UPDATE:
             self.announce_help(S["update_skipped"])
-            self.editor.focus()
+            self._refocus()
             return
         self.announce_help(S["downloading"] % info.get("version", "the update"))
         box = updatedialog.DownloadProgressDialog(
@@ -1888,7 +2528,7 @@ class MainFrame(wx.Frame):
         if not token:
             self.announce(message)
             dialogs.show_text(self, "Update failed", message)
-            self.editor.focus()
+            self._refocus()
             return
         self._restart_body = None
         if not self.modified:
@@ -1912,7 +2552,7 @@ class MainFrame(wx.Frame):
             self._autosave.Start(AUTOSAVE_MS)
             self.announce(message)
             dialogs.show_text(self, "Update failed", message)
-            self.editor.focus()
+            self._refocus()
 
     def _flush_for_restart(self):
         """What must be on disk before Velopack ends this process.
@@ -2026,7 +2666,7 @@ class MainFrame(wx.Frame):
                     except OSError:
                         pass
             self.announce(S["snapshots_deleted"])
-        self.editor.focus()
+        self._refocus()
 
     def _recover(self, snapshot, source, title):
         """Read the snapshot on a thread, like every other open.
@@ -2052,7 +2692,7 @@ class MainFrame(wx.Frame):
         if not self:
             return
         self.announce(S["open_failed"] % (title or "the recovered document", exc))
-        self.editor.focus()
+        self._refocus()
 
     def _recovered(self, snapshot, source, title, clean, meta, warnings):
         if not self:
@@ -2068,11 +2708,15 @@ class MainFrame(wx.Frame):
             self.path = None
             self.source_path = source or None
         self.imported_from = ""
+        self.import_notes = []
         self.modified = True
         self.snapshot_path = snapshot
+        self.show_editor()
         self._apply_meta_to_page()
         self._update_title()
         self.editor.load_clean_body(clean)
+        self._panel_dirty()
+        self._refocus()
         self.announce(S["recovered"] % (title or self.document_name()))
         if warnings:
             dialogs.show_text(self, S["open_notes_title"], "\n".join(warnings),
@@ -2089,6 +2733,7 @@ class MainFrame(wx.Frame):
         self._closing = True
         try:
             self._autosave.Stop()
+            self._check_timer.Stop()
         except Exception:
             pass
         # A forced close, Windows ending the session among them, cannot be
@@ -2143,20 +2788,24 @@ def source_name(kind):
             "docx": "Word", "pdf": "a PDF", "rtf": "Rich Text"}.get(kind, kind or "another format")
 
 
-def read_document(path, kind, progress=None):
-    """(body_html, meta, warnings), through docfile and pdfimport when present."""
+def read_document(path, kind, progress=None, password=""):
+    """(body_html, meta, warnings), through docfile and pdfimport when present.
+
+    `password` is for a protected PDF. A wrong or missing one raises
+    PdfPasswordError, which the window turns into the password prompt.
+    """
     if kind == "pdf":
         try:
             from .. import pdfimport
         except ImportError:
             raise RuntimeError(S["import_module_missing"] % "PDF")
-        result = pdfimport.import_pdf(path, progress=progress) if progress else pdfimport.import_pdf(path)
+        result = pdfimport.import_pdf(path, progress=progress, password=password)
         meta = dict(getattr(result, "meta", {}) or {})
         meta.setdefault("source_kind", "pdf")
         warnings = list(getattr(result, "warnings", []) or [])
         if getattr(result, "is_scanned", False) and not warnings:
             warnings.append("This PDF has no text layer: it is pictures of text, and "
-                            "there is no OCR in this release.")
+                            "no words could be read from them.")
         return getattr(result, "body_html", ""), meta, warnings
     try:
         from .. import docfile

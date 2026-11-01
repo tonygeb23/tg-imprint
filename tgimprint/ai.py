@@ -405,6 +405,10 @@ def _trouble(error, provider):
         return ("%s does not know that model name. Model names change; put "
                 "the current one in the Model box on the AI page of "
                 "Preferences, or use Get the list there." % who)
+    if code == 402:
+        return ("%s says the account has run out of credit. Add credit to your "
+                "account with %s, then try again. Nothing in your document has "
+                "changed." % (who, who))
     if code == 429:
         return ("%s is rate limiting, or the account has run out of credit. "
                 "Wait a moment and try again, or check the billing on your "
@@ -420,6 +424,11 @@ def _trouble(error, provider):
     if code is not None and 500 <= int(code) < 600:
         return ("%s is having trouble at their end. Nothing is wrong here, "
                 "so try again in a minute." % who)
+    if code is not None:
+        # An HTTPError is a URLError, so an answer from a service we have no
+        # sentence for must not be reported as not reaching it.
+        return ("%s refused the request, and said code %s. Nothing in your "
+                "document has changed." % (who, code))
     if isinstance(error, urllib.error.URLError):
         return ("Could not reach %s. Check this machine is online. Nothing "
                 "in your document has changed." % who)

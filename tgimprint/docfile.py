@@ -139,6 +139,15 @@ def png_safe(image):
     return image.convert("RGBA" if keep_alpha else "RGB")
 
 
+def png_safe_bytes(data):
+    """The same picture as bytes a Word file can hold: PNG, whatever came in."""
+    with Image.open(io.BytesIO(data)) as image:
+        image.load()
+        output = io.BytesIO()
+        png_safe(image).save(output, "PNG")
+        return output.getvalue()
+
+
 def _read_source(source):
     if isinstance(source, (bytes, bytearray)):
         return bytes(source)
